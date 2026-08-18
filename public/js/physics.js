@@ -1,6 +1,6 @@
 /**
- * KARTLAN 3D - Arcade Kart Physics & Controller Engine
- * Features: Raycast-assisted grounding, track slope pitch & roll alignment,
+ * KARTLAN 3D - Arcade Kart Physics & Collision Engine
+ * Features: Raycast ground tracking, elastic track-boundary & kart-to-kart collisions,
  * hop & 3-tier drift mini-turbos, suspension dynamics, and drafting.
  */
 
@@ -16,30 +16,30 @@ export class KartPhysics {
     this.position = new THREE.Vector3(0, 0.05, 0);
     this.quaternion = new THREE.Quaternion();
     this.velocity = new THREE.Vector3();
-    this.heading = 0; // Y-axis rotation in radians
+    this.heading = 0;
     this.pitch = 0;
     this.roll = 0;
     this.verticalVelocity = 0;
     this.isGrounded = true;
 
     // Suspension & Grounding
-    this.rideHeight = 0.04; // Exact tire contact patch on road
-    this.suspensionCompression = 0;
+    this.rideHeight = 0.04;
+    this.radius = 1.6;
 
-    // Speed & Acceleration Specs
+    // Speed & Handling Specs
     this.speed = 0;
     this.maxSpeed = 38.0;
     this.maxReverseSpeed = -14.0;
-    this.acceleration = 24.0;
-    this.braking = 32.0;
-    this.drag = 4.0;
-    this.turnRate = 2.4;
+    this.acceleration = 25.0;
+    this.braking = 34.0;
+    this.drag = 4.2;
+    this.turnRate = 2.45;
 
     // Drift State Machine
     this.isDrifting = false;
-    this.driftDirection = 0; // -1 (left), +1 (right)
+    this.driftDirection = 0;
     this.driftChargeTime = 0;
-    this.driftTier = 0; // 0, 1 (blue), 2 (orange), 3 (purple)
+    this.driftTier = 0;
     this.driftVisualAngle = 0;
     this.prevDriftButton = false;
 
@@ -63,7 +63,7 @@ export class KartPhysics {
     this.currentLap = 1;
     this.lastClosestWpIndex = 0;
 
-    // Camera Lookahead & Shake
+    // Camera FX
     this.cameraShake = 0;
     this.fovKick = 0;
   }
@@ -84,13 +84,13 @@ export class KartPhysics {
 
     this.updateTimers(dt);
 
-    // 1. Calculate Target Max Speed & Accelerations
+    // 1. Target Max Speed & Accelerations
     let currentMaxSpeed = this.maxSpeed;
     const isOffRoad = this.track.isOffRoad(this.position);
     const isBoosting = this.boostTimer > 0 || this.isInvincible;
 
     if (isBoosting) {
-      currentMaxSpeed = 52.0;
+      currentMaxSpeed = 53.0;
     } else if (isOffRoad) {
       currentMaxSpeed = 16.0;
     }
@@ -102,14 +102,14 @@ export class KartPhysics {
     // 2. Throttle & Braking
     let targetPitch = 0;
     if (input.accelerate) {
-      targetPitch = 0.025; // Slight rear squat on acceleration
+      targetPitch = 0.025;
       if (this.speed < currentMaxSpeed) {
         this.speed += this.acceleration * dt;
       } else {
         this.speed -= this.drag * 1.5 * dt;
       }
     } else if (input.brake) {
-      targetPitch = -0.035; // Slight nose dive on braking
+      targetPitch = -0.035;
       if (this.speed > 0) {
         this.speed -= this.braking * dt;
       } else if (this.speed > this.maxReverseSpeed) {
@@ -141,11 +141,11 @@ export class KartPhysics {
       this.driftChargeTime += dt * chargeRate;
 
       const prevTier = this.driftTier;
-      if (this.driftChargeTime > 3.8) {
+      if (this.driftChargeTime > 3.6) {
         this.driftTier = 3;
-      } else if (this.driftChargeTime > 2.3) {
+      } else if (this.driftChargeTime > 2.2) {
         this.driftTier = 2;
-      } else if (this.driftChargeTime > 1.1) {
+      } else if (this.driftChargeTime > 1.0) {
         this.driftTier = 1;
       }
 
@@ -153,7 +153,7 @@ export class KartPhysics {
         sound.playMiniTurboCharge(this.driftTier);
       }
 
-      const targetVisualAngle = this.driftDirection * 0.45;
+      const targetVisualAngle = this.driftDirection * 0.42;
       this.driftVisualAngle = THREE.MathUtils.lerp(this.driftVisualAngle, targetVisualAngle, dt * 10);
     } else {
       if (Math.abs(this.speed) > 0.5) {
@@ -173,38 +173,41 @@ export class KartPhysics {
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
 
-    // 6. Raycast & Ground Elevation Following (Hugging Road Surface)
+    // 6. Track Boundary & Guard Rail Collisions (Elastic Bounce)
+    this.updateTrackBoundaryCollisions();
+
+    // 7. Ground Elevation & Suspension Follower
     this.updateGrounding(dt);
 
-    // 7. Check Boost Pads & Jump Ramps
+    // 8. Boost Pads & Jump Ramps
     if (this.track.checkBoostPad(this.position)) {
       this.applyBoost(1.8, 1.4);
     }
 
     const rampHeight = this.track.checkJumpRamp(this.position);
     if (rampHeight > 0 && this.isGrounded) {
-      this.verticalVelocity = Math.max(12.0, rampHeight * 2.2);
+      this.verticalVelocity = Math.max(13.0, rampHeight * 2.5);
       this.isGrounded = false;
       if (this.isLocal) sound.playHop();
     }
 
-    // 8. Drafting / Slipstream Detection
+    // 9. Drafting / Slipstream Detection
     this.updateDrafting(dt, otherKarts);
 
-    // 9. Kart-to-Kart Collisions
+    // 10. Kart-to-Kart Elastic Collisions
     this.updateKartCollisions(dt, otherKarts);
 
-    // 10. Update Checkpoints & Progression
+    // 11. Checkpoints & Progression
     this.updateTrackProgress();
 
-    // 11. Audio feedback
+    // 12. Audio feedback
     if (this.isLocal) {
       const speedNorm = Math.abs(this.speed) / this.maxSpeed;
       sound.updateEngine(speedNorm, input.accelerate, isBoosting);
       sound.setDriftScreech(this.isDrifting, this.driftTier / 3.0 + 0.5);
     }
 
-    // 12. Orientation with Slope & Chassis Banking
+    // 13. Dynamic Slope Pitch & Chassis Banking
     const closest = this.track.findClosestWaypoint(this.position);
     const slopePitch = Math.atan2(closest.tangent.y, Math.hypot(closest.tangent.x, closest.tangent.z));
     const targetRoll = (this.isDrifting ? this.driftDirection * 0.08 : steerAmount * 0.05) * (this.speed / this.maxSpeed);
@@ -216,10 +219,31 @@ export class KartPhysics {
     const euler = new THREE.Euler(this.pitch, totalHeading, this.roll, 'YXZ');
     this.quaternion.setFromEuler(euler);
 
-    // Camera FOV & Shake
+    // Camera FX
     const targetFov = isBoosting ? 14 : (this.speed > 30 ? 6 : 0);
     this.fovKick = THREE.MathUtils.lerp(this.fovKick, targetFov, dt * 6);
     this.cameraShake = Math.max(0, this.cameraShake - dt * 2.5);
+  }
+
+  updateTrackBoundaryCollisions() {
+    const { waypoint, lateralOffset, maxHalfWidth } = this.track.getTrackOffset(this.position);
+    const barrierLimit = maxHalfWidth + 3.8;
+
+    if (Math.abs(lateralOffset) > barrierLimit) {
+      const sign = Math.sign(lateralOffset);
+      const overshoot = Math.abs(lateralOffset) - barrierLimit;
+
+      // Push back within boundaries
+      this.position.addScaledVector(waypoint.binormal, -sign * overshoot * 1.2);
+
+      // Elastic bumper bounce: reduce speed slightly and nudge heading toward center
+      this.speed = Math.max(this.speed * 0.85, 0);
+      const tangentHeading = Math.atan2(-waypoint.tangent.x, -waypoint.tangent.z);
+      this.heading = THREE.MathUtils.lerp(this.heading, tangentHeading, 0.35);
+
+      this.cameraShake = 0.35;
+      if (this.isLocal) sound.playBananaSlip();
+    }
   }
 
   updateDrift(dt, input) {
@@ -285,7 +309,6 @@ export class KartPhysics {
         this.isGrounded = true;
       }
     } else {
-      // Snaps directly to road surface without floating
       this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, dt * 20);
     }
   }
@@ -322,28 +345,49 @@ export class KartPhysics {
   }
 
   updateKartCollisions(dt, otherKarts) {
-    const kartRadius = 1.8;
+    const totalRadius = this.radius * 2;
+
     for (const other of otherKarts) {
       if (other === this) continue;
       const dx = this.position.x - other.position.x;
       const dz = this.position.z - other.position.z;
       const dist = Math.hypot(dx, dz);
 
-      if (dist < kartRadius * 2 && dist > 0.001) {
+      if (dist < totalRadius && dist > 0.0001) {
         const nx = dx / dist;
         const nz = dz / dist;
-        const overlap = (kartRadius * 2 - dist) * 0.5;
+        const overlap = totalRadius - dist;
 
-        this.position.x += nx * overlap;
-        this.position.z += nz * overlap;
+        // Positional separation
+        this.position.x += nx * overlap * 0.5;
+        this.position.z += nz * overlap * 0.5;
+        other.position.x -= nx * overlap * 0.5;
+        other.position.z -= nz * overlap * 0.5;
+
+        // Elastic momentum exchange
+        const relVelX = this.velocity.x - other.velocity.x;
+        const relVelZ = this.velocity.z - other.velocity.z;
+        const velAlongNormal = relVelX * nx + relVelZ * nz;
+
+        if (velAlongNormal < 0) {
+          const restitution = 0.65;
+          const impulse = -(1 + restitution) * velAlongNormal * 0.5;
+
+          this.velocity.x += impulse * nx;
+          this.velocity.z += impulse * nz;
+          other.velocity.x -= impulse * nx;
+          other.velocity.z -= impulse * nz;
+
+          this.speed *= 0.92;
+          other.speed *= 0.92;
+        }
 
         if (this.isInvincible && !other.isInvincible) {
           other.spinOut();
         } else if (other.isInvincible && !this.isInvincible) {
           this.spinOut();
         } else {
-          this.speed *= 0.92;
-          this.cameraShake = 0.3;
+          this.cameraShake = 0.35;
         }
       }
     }

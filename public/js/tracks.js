@@ -1,7 +1,7 @@
 /**
  * KARTLAN 3D - Track Generator & Geometry Engine
- * Creates rich 3D tracks with banked curves, curbs, boost zippers, jump ramps,
- * checkpoints, waypoints, and environment scenery.
+ * Creates rich 3D tracks with banked curves, curbs, boost zippers, smooth jump ramps,
+ * and guaranteed obstacle-free roads with safely positioned environment scenery.
  */
 
 import * as THREE from './three.module.min.js';
@@ -13,10 +13,10 @@ export const TRACK_CONFIGS = {
     theme: 'cyberpunk',
     skyColor: 0x070b19,
     fogColor: 0x070b19,
-    roadColor: 0x181e2e,
+    roadColor: 0x141a29,
     curbColorA: 0x00f0ff,
     curbColorB: 0xff0055,
-    roadWidth: 16,
+    roadWidth: 18,
     points: [
       new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(0, 0, 80),
@@ -25,7 +25,7 @@ export const TRACK_CONFIGS = {
       new THREE.Vector3(170, 0, 180),
       new THREE.Vector3(200, 0, 120),
       new THREE.Vector3(180, 0, 50),
-      new THREE.Vector3(220, 5, -20),
+      new THREE.Vector3(220, 4, -20),
       new THREE.Vector3(250, 0, -100),
       new THREE.Vector3(200, 0, -180),
       new THREE.Vector3(120, 0, -210),
@@ -39,7 +39,7 @@ export const TRACK_CONFIGS = {
       { progress: 0.85, offset: -3 }
     ],
     jumpRamps: [
-      { progress: 0.42, height: 4.5 }
+      { progress: 0.42, height: 3.5 }
     ]
   },
 
@@ -52,19 +52,19 @@ export const TRACK_CONFIGS = {
     roadColor: 0x3d271d,
     curbColorA: 0xffaa00,
     curbColorB: 0xaa3300,
-    roadWidth: 18,
+    roadWidth: 20,
     points: [
       new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(0, 0, 100),
-      new THREE.Vector3(50, 8, 180),
-      new THREE.Vector3(140, 14, 210),
-      new THREE.Vector3(220, 10, 160),
+      new THREE.Vector3(50, 6, 180),
+      new THREE.Vector3(140, 10, 210),
+      new THREE.Vector3(220, 8, 160),
       new THREE.Vector3(250, 2, 80),
-      new THREE.Vector3(200, -2, 0),
+      new THREE.Vector3(200, 0, 0),
       new THREE.Vector3(150, 0, -80),
-      new THREE.Vector3(190, 6, -170),
-      new THREE.Vector3(140, 12, -240),
-      new THREE.Vector3(40, 6, -230),
+      new THREE.Vector3(190, 5, -170),
+      new THREE.Vector3(140, 8, -240),
+      new THREE.Vector3(40, 4, -230),
       new THREE.Vector3(-60, 0, -170),
       new THREE.Vector3(-60, 0, -60)
     ],
@@ -73,8 +73,8 @@ export const TRACK_CONFIGS = {
       { progress: 0.68, offset: 2 }
     ],
     jumpRamps: [
-      { progress: 0.35, height: 6.0 },
-      { progress: 0.78, height: 5.0 }
+      { progress: 0.35, height: 4.0 },
+      { progress: 0.78, height: 3.5 }
     ]
   },
 
@@ -87,18 +87,18 @@ export const TRACK_CONFIGS = {
     roadColor: 0x0c0620,
     curbColorA: 0xff00ff,
     curbColorB: 0x00ffff,
-    roadWidth: 17,
+    roadWidth: 19,
     points: [
       new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(0, 0, 90),
-      new THREE.Vector3(60, 5, 170),
-      new THREE.Vector3(150, 12, 190),
-      new THREE.Vector3(230, 8, 130),
+      new THREE.Vector3(60, 4, 170),
+      new THREE.Vector3(150, 8, 190),
+      new THREE.Vector3(230, 6, 130),
       new THREE.Vector3(210, 0, 40),
-      new THREE.Vector3(260, -4, -40),
+      new THREE.Vector3(260, 0, -40),
       new THREE.Vector3(270, 4, -140),
-      new THREE.Vector3(180, 10, -210),
-      new THREE.Vector3(80, 5, -220),
+      new THREE.Vector3(180, 8, -210),
+      new THREE.Vector3(80, 4, -220),
       new THREE.Vector3(-20, 0, -180),
       new THREE.Vector3(-80, 0, -90),
       new THREE.Vector3(-50, 0, -20)
@@ -110,8 +110,8 @@ export const TRACK_CONFIGS = {
       { progress: 0.88, offset: 0 }
     ],
     jumpRamps: [
-      { progress: 0.28, height: 7.0 },
-      { progress: 0.58, height: 6.0 }
+      { progress: 0.28, height: 4.5 },
+      { progress: 0.58, height: 4.0 }
     ]
   }
 };
@@ -121,7 +121,7 @@ export class Track {
     this.scene = scene;
     this.config = TRACK_CONFIGS[trackId] || TRACK_CONFIGS.circuit_neon;
     this.curve = null;
-    this.waypoints = []; // ~300 dense sampled waypoints
+    this.waypoints = [];
     this.totalLength = 0;
     this.roadMesh = null;
     this.curbsMesh = null;
@@ -135,11 +135,9 @@ export class Track {
   }
 
   build() {
-    // Create smooth closed CatmullRom spline
     this.curve = new THREE.CatmullRomCurve3(this.config.points, true, 'catmullrom', 0.5);
 
-    // Sample dense waypoints along spline
-    const sampleCount = 350;
+    const sampleCount = 360;
     this.waypoints = [];
     for (let i = 0; i < sampleCount; i++) {
       const u = i / sampleCount;
@@ -160,17 +158,18 @@ export class Track {
     this.generateRoadGeometry();
     this.generateCurbsAndBarriers();
     this.generateBoostPadsAndRamps();
-    this.generateEnvironment();
     this.generateFinishLine();
+    this.generateEnvironment();
   }
 
   generateRoadGeometry() {
     const halfWidth = this.config.roadWidth / 2;
     const segments = this.waypoints.length;
     const geometry = new THREE.BufferGeometry();
+
     const vertices = [];
-    const uvs = [];
     const normals = [];
+    const uvs = [];
     const indices = [];
 
     for (let i = 0; i <= segments; i++) {
@@ -178,13 +177,13 @@ export class Track {
       const left = new THREE.Vector3().copy(wp.point).addScaledVector(wp.binormal, -halfWidth);
       const right = new THREE.Vector3().copy(wp.point).addScaledVector(wp.binormal, halfWidth);
 
-      vertices.push(left.x, left.y + 0.05, left.z);
-      vertices.push(right.x, right.y + 0.05, right.z);
+      vertices.push(left.x, left.y, left.z);
+      vertices.push(right.x, right.y, right.z);
 
       normals.push(0, 1, 0);
       normals.push(0, 1, 0);
 
-      const v = i / 4; // texture repeat
+      const v = i / 10;
       uvs.push(0, v);
       uvs.push(1, v);
     }
@@ -206,15 +205,14 @@ export class Track {
 
     const roadMat = new THREE.MeshStandardMaterial({
       color: this.config.roadColor,
-      roughness: 0.75,
-      metalness: 0.2
+      roughness: 0.8,
+      metalness: 0.15
     });
 
     this.roadMesh = new THREE.Mesh(geometry, roadMat);
     this.roadMesh.receiveShadow = true;
     this.scene.add(this.roadMesh);
 
-    // Center dash markings
     this.generateCenterDashes();
   }
 
@@ -225,11 +223,11 @@ export class Track {
     for (let i = 0; i < segments; i += 3) {
       const wp1 = this.waypoints[i];
       const wp2 = this.waypoints[(i + 1) % segments];
-      positions.push(wp1.point.x, wp1.point.y + 0.08, wp1.point.z);
-      positions.push(wp2.point.x, wp2.point.y + 0.08, wp2.point.z);
+      positions.push(wp1.point.x, wp1.point.y + 0.03, wp1.point.z);
+      positions.push(wp2.point.x, wp2.point.y + 0.03, wp2.point.z);
     }
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 });
+    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
     const line = new THREE.LineSegments(geom, mat);
     this.scene.add(line);
   }
@@ -237,9 +235,8 @@ export class Track {
   generateCurbsAndBarriers() {
     const halfWidth = this.config.roadWidth / 2;
     const segments = this.waypoints.length;
-    const curbWidth = 1.2;
+    const curbWidth = 1.4;
 
-    // Create alternating colored curbs
     for (let side of [-1, 1]) {
       const curbGeom = new THREE.BufferGeometry();
       const vertices = [];
@@ -254,10 +251,10 @@ export class Track {
         const inner = new THREE.Vector3().copy(wp.point).addScaledVector(wp.binormal, innerOffset);
         const outer = new THREE.Vector3().copy(wp.point).addScaledVector(wp.binormal, outerOffset);
 
-        vertices.push(inner.x, inner.y + 0.12, inner.z);
-        vertices.push(outer.x, outer.y + 0.12, outer.z);
+        vertices.push(inner.x, inner.y + 0.04, inner.z);
+        vertices.push(outer.x, outer.y + 0.04, outer.z);
 
-        const isEven = Math.floor(i / 2) % 2 === 0;
+        const isEven = Math.floor(i / 3) % 2 === 0;
         const col = new THREE.Color(isEven ? this.config.curbColorA : this.config.curbColorB);
         colors.push(col.r, col.g, col.b);
         colors.push(col.r, col.g, col.b);
@@ -280,7 +277,7 @@ export class Track {
       const curbMat = new THREE.MeshStandardMaterial({
         vertexColors: true,
         roughness: 0.6,
-        metalness: 0.3
+        metalness: 0.2
       });
       const curbMesh = new THREE.Mesh(curbGeom, curbMat);
       this.scene.add(curbMesh);
@@ -288,12 +285,12 @@ export class Track {
   }
 
   generateBoostPadsAndRamps() {
-    // Boost Pads (zipper pads)
+    // Boost Pads (flush ground chevron pads)
     for (const pad of this.config.boostPads) {
       const wp = this.getWaypointAtProgress(pad.progress);
       const pos = new THREE.Vector3().copy(wp.point).addScaledVector(wp.binormal, pad.offset);
 
-      const padGeom = new THREE.PlaneGeometry(6, 9);
+      const padGeom = new THREE.PlaneGeometry(6.5, 9);
       const padMat = new THREE.MeshBasicMaterial({
         color: 0x00ffea,
         side: THREE.DoubleSide
@@ -301,7 +298,7 @@ export class Track {
       const mesh = new THREE.Mesh(padGeom, padMat);
       mesh.rotation.x = -Math.PI / 2;
       mesh.position.copy(pos);
-      mesh.position.y += 0.1;
+      mesh.position.y += 0.03;
       mesh.lookAt(pos.clone().add(wp.tangent));
       mesh.rotateX(-Math.PI / 2);
 
@@ -313,18 +310,48 @@ export class Track {
       });
     }
 
-    // Jump Ramps
+    // Jump Ramps (Smooth inclined wedge ramp with chevron boost markings)
     for (const ramp of this.config.jumpRamps) {
       const wp = this.getWaypointAtProgress(ramp.progress);
-      const rampGeom = new THREE.BoxGeometry(this.config.roadWidth - 2, ramp.height, 12);
+      const rampWidth = this.config.roadWidth - 2.5;
+      const rampLength = 10;
+      const rampHeight = Math.min(ramp.height, 3.2);
+
+      // Create smooth wedge ramp geometry
+      const rampGeom = new THREE.BufferGeometry();
+      const hw = rampWidth / 2;
+      const hl = rampLength / 2;
+
+      // Vertices of wedge
+      const verts = new Float32Array([
+        // Incline plane
+        -hw, 0, -hl,
+         hw, 0, -hl,
+         hw, rampHeight, hl,
+        -hw, rampHeight, hl,
+        // Back wall
+        -hw, rampHeight, hl,
+         hw, rampHeight, hl,
+         hw, 0, hl,
+        -hw, 0, hl
+      ]);
+
+      const idxs = [
+        0, 2, 1,  0, 3, 2, // top incline
+        4, 6, 5,  4, 7, 6  // back
+      ];
+
+      rampGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+      rampGeom.setIndex(idxs);
+      rampGeom.computeVertexNormals();
+
       const rampMat = new THREE.MeshStandardMaterial({
         color: 0xffaa00,
-        metalness: 0.5,
-        roughness: 0.4
+        metalness: 0.6,
+        roughness: 0.3
       });
       const rampMesh = new THREE.Mesh(rampGeom, rampMat);
       rampMesh.position.copy(wp.point);
-      rampMesh.position.y += ramp.height / 2;
       rampMesh.lookAt(wp.point.clone().add(wp.tangent));
       this.scene.add(rampMesh);
 
@@ -340,23 +367,19 @@ export class Track {
     const wp = this.waypoints[0];
     const halfWidth = this.config.roadWidth / 2;
 
-    // Checkered banner arch
     const archGroup = new THREE.Group();
-
-    // Left & Right Pillars
-    const pillarGeom = new THREE.CylinderGeometry(0.8, 0.8, 12, 16);
+    const pillarGeom = new THREE.CylinderGeometry(0.8, 0.8, 14, 16);
     const pillarMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8, roughness: 0.2 });
 
     const leftPillar = new THREE.Mesh(pillarGeom, pillarMat);
-    leftPillar.position.copy(wp.point).addScaledVector(wp.binormal, -halfWidth - 1.5);
-    leftPillar.position.y += 6;
+    leftPillar.position.copy(wp.point).addScaledVector(wp.binormal, -halfWidth - 3.5);
+    leftPillar.position.y += 7;
 
     const rightPillar = new THREE.Mesh(pillarGeom, pillarMat);
-    rightPillar.position.copy(wp.point).addScaledVector(wp.binormal, halfWidth + 1.5);
-    rightPillar.position.y += 6;
+    rightPillar.position.copy(wp.point).addScaledVector(wp.binormal, halfWidth + 3.5);
+    rightPillar.position.y += 7;
 
-    // Cross beam
-    const beamGeom = new THREE.BoxGeometry(this.config.roadWidth + 4, 2.5, 2);
+    const beamGeom = new THREE.BoxGeometry(this.config.roadWidth + 8, 2.5, 2);
     const beamMat = new THREE.MeshStandardMaterial({
       color: 0x00f0ff,
       emissive: 0x0066aa,
@@ -364,7 +387,7 @@ export class Track {
     });
     const beam = new THREE.Mesh(beamGeom, beamMat);
     beam.position.copy(wp.point);
-    beam.position.y += 11;
+    beam.position.y += 13;
     beam.lookAt(wp.point.clone().add(wp.binormal));
 
     archGroup.add(leftPillar);
@@ -374,72 +397,87 @@ export class Track {
     this.finishLineMesh = archGroup;
   }
 
+  // Guaranteed safe scenery placement strictly OUTSIDE track boundaries
+  isSafeSceneryLocation(x, z, minBuffer = 26) {
+    for (let i = 0; i < this.waypoints.length; i += 2) {
+      const wp = this.waypoints[i];
+      const dx = x - wp.point.x;
+      const dz = z - wp.point.z;
+      if (Math.hypot(dx, dz) < minBuffer) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   generateEnvironment() {
     const theme = this.config.theme;
 
     if (theme === 'cyberpunk') {
-      // Ground plane
-      const groundGeom = new THREE.PlaneGeometry(800, 800, 32, 32);
-      const groundMat = new THREE.MeshStandardMaterial({ color: 0x030611, roughness: 0.9 });
+      const groundGeom = new THREE.PlaneGeometry(1200, 1200, 16, 16);
+      const groundMat = new THREE.MeshStandardMaterial({ color: 0x030611, roughness: 0.95 });
       const ground = new THREE.Mesh(groundGeom, groundMat);
       ground.rotation.x = -Math.PI / 2;
       ground.position.y = -0.2;
       this.scene.add(ground);
 
-      // Neon Skyscraper Towers in background
-      for (let i = 0; i < 45; i++) {
-        const height = 40 + Math.random() * 90;
-        const width = 18 + Math.random() * 25;
+      let spawned = 0;
+      for (let i = 0; i < 150 && spawned < 45; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 60 + Math.random() * 450;
+        const x = Math.cos(angle) * dist + 100;
+        const z = Math.sin(angle) * dist - 50;
+
+        if (!this.isSafeSceneryLocation(x, z, this.config.roadWidth / 2 + 18)) {
+          continue;
+        }
+
+        const height = 45 + Math.random() * 95;
+        const width = 18 + Math.random() * 26;
         const geom = new THREE.BoxGeometry(width, height, width);
         const col = Math.random() > 0.5 ? 0x0a152d : 0x160826;
         const mat = new THREE.MeshStandardMaterial({ color: col, metalness: 0.7, roughness: 0.3 });
         const building = new THREE.Mesh(geom, mat);
-
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 180 + Math.random() * 200;
-        building.position.set(Math.cos(angle) * dist, height / 2, Math.sin(angle) * dist);
+        building.position.set(x, height / 2, z);
         this.scene.add(building);
 
-        // Neon roof edge
         const edgeGeom = new THREE.BoxGeometry(width + 0.5, 1.5, width + 0.5);
         const edgeMat = new THREE.MeshBasicMaterial({
           color: Math.random() > 0.5 ? 0x00f0ff : 0xff0077
         });
         const edge = new THREE.Mesh(edgeGeom, edgeMat);
-        edge.position.set(building.position.x, height, building.position.z);
+        edge.position.set(x, height, z);
         this.scene.add(edge);
+        spawned++;
       }
     } else if (theme === 'desert') {
-      // Desert canyon terrain
-      const groundGeom = new THREE.PlaneGeometry(800, 800, 48, 48);
-      const pos = groundGeom.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        const vx = pos.getX(i);
-        const vy = pos.getY(i);
-        const heightVal = Math.sin(vx * 0.02) * Math.cos(vy * 0.02) * 12;
-        pos.setZ(i, heightVal);
-      }
-      groundGeom.computeVertexNormals();
-
+      const groundGeom = new THREE.PlaneGeometry(1200, 1200, 32, 32);
       const groundMat = new THREE.MeshStandardMaterial({ color: 0x9c4826, roughness: 0.95 });
       const ground = new THREE.Mesh(groundGeom, groundMat);
       ground.rotation.x = -Math.PI / 2;
-      ground.position.y = -2;
+      ground.position.y = -0.3;
       this.scene.add(ground);
 
-      // Cacti / Canyon Rocks
-      for (let i = 0; i < 35; i++) {
-        const rockGeom = new THREE.DodecahedronGeometry(8 + Math.random() * 12, 1);
+      let spawned = 0;
+      for (let i = 0; i < 120 && spawned < 35; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 50 + Math.random() * 400;
+        const x = Math.cos(angle) * dist + 80;
+        const z = Math.sin(angle) * dist - 60;
+
+        if (!this.isSafeSceneryLocation(x, z, this.config.roadWidth / 2 + 20)) {
+          continue;
+        }
+
+        const rockGeom = new THREE.DodecahedronGeometry(10 + Math.random() * 14, 1);
         const rockMat = new THREE.MeshStandardMaterial({ color: 0x6e3118, roughness: 0.9 });
         const rock = new THREE.Mesh(rockGeom, rockMat);
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 140 + Math.random() * 180;
-        rock.position.set(Math.cos(angle) * dist, 6, Math.sin(angle) * dist);
+        rock.position.set(x, 6, z);
         rock.scale.set(1 + Math.random(), 1.5 + Math.random() * 2, 1 + Math.random());
         this.scene.add(rock);
+        spawned++;
       }
     } else if (theme === 'space') {
-      // Starfield particles
       const starGeom = new THREE.BufferGeometry();
       const starPositions = [];
       const starColors = [];
@@ -458,15 +496,14 @@ export class Track {
       const starField = new THREE.Points(starGeom, starMat);
       this.scene.add(starField);
 
-      // Distant Floating Planet
-      const planetGeom = new THREE.SphereGeometry(60, 32, 32);
+      const planetGeom = new THREE.SphereGeometry(70, 32, 32);
       const planetMat = new THREE.MeshStandardMaterial({
         color: 0x8a2be2,
         emissive: 0x3d0c66,
         roughness: 0.8
       });
       const planet = new THREE.Mesh(planetGeom, planetMat);
-      planet.position.set(-300, 180, -400);
+      planet.position.set(-350, 200, -450);
       this.scene.add(planet);
     }
   }
@@ -494,12 +531,21 @@ export class Track {
     return closestWp;
   }
 
-  isOffRoad(position) {
+  // Returns lateral signed distance from track center line (+right, -left)
+  getTrackOffset(position) {
     const closest = this.findClosestWaypoint(position);
-    const dx = position.x - closest.point.x;
-    const dz = position.z - closest.point.z;
-    const dist = Math.hypot(dx, dz);
-    return dist > (this.config.roadWidth / 2 + 1.5);
+    const toPos = new THREE.Vector3().subVectors(position, closest.point);
+    const lateralDist = toPos.dot(closest.binormal);
+    return {
+      waypoint: closest,
+      lateralOffset: lateralDist,
+      maxHalfWidth: this.config.roadWidth / 2
+    };
+  }
+
+  isOffRoad(position) {
+    const { lateralOffset, maxHalfWidth } = this.getTrackOffset(position);
+    return Math.abs(lateralOffset) > maxHalfWidth + 1.2;
   }
 
   checkBoostPad(position) {
