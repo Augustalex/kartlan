@@ -1,8 +1,7 @@
 /**
  * KARTLAN 3D - 3D Kart Meshes & Visual FX Engine
- * Creates rich procedural 3D kart models with spinning wheels, steering linkage,
- * animated driver, exhaust fire, and 3-tier drift spark particle systems.
- * Aligned with standard Three.js forward direction (-Z).
+ * Features: Authentic ground contact shadow, spinning tires, driver animations,
+ * exhaust flame particles, and 3-tier drift spark particle systems.
  */
 
 import * as THREE from './three.module.min.js';
@@ -25,6 +24,7 @@ export class KartVisual {
     this.steeringWheel = null;
     this.exhaustL = null;
     this.exhaustR = null;
+    this.contactShadow = null;
 
     // Particle Systems
     this.driftSparks = null;
@@ -35,6 +35,7 @@ export class KartVisual {
 
     this.wheelRotation = 0;
     this.buildKart();
+    this.buildContactShadow();
     this.buildDriftParticles();
     this.buildExhaustParticles();
 
@@ -50,50 +51,50 @@ export class KartVisual {
     const chrome = new THREE.Color(0xcccccc);
 
     // 1. Lower Chassis
-    const chassisGeom = new THREE.BoxGeometry(2.2, 0.4, 3.8);
+    const chassisGeom = new THREE.BoxGeometry(2.2, 0.35, 3.8);
     const chassisMat = new THREE.MeshStandardMaterial({
       color: darkChassis,
       metalness: 0.8,
       roughness: 0.3
     });
     const chassis = new THREE.Mesh(chassisGeom, chassisMat);
-    chassis.position.y = 0.4;
+    chassis.position.y = 0.38;
     chassis.castShadow = true;
     this.kartRoot.add(chassis);
 
-    // 2. Main Body Shell (Sleek aerodynamic shell)
-    const bodyGeom = new THREE.BoxGeometry(1.8, 0.5, 2.6);
+    // 2. Main Body Shell
+    const bodyGeom = new THREE.BoxGeometry(1.8, 0.45, 2.6);
     const bodyMat = new THREE.MeshStandardMaterial({
       color: mainColor,
       metalness: 0.6,
       roughness: 0.2
     });
     this.bodyMesh = new THREE.Mesh(bodyGeom, bodyMat);
-    this.bodyMesh.position.set(0, 0.7, -0.2);
+    this.bodyMesh.position.set(0, 0.65, -0.2);
     this.bodyMesh.castShadow = true;
     this.kartRoot.add(this.bodyMesh);
 
-    // Nose Cone (points forward in local kart coords)
+    // Nose Cone
     const noseGeom = new THREE.ConeGeometry(0.9, 1.4, 4);
     const nose = new THREE.Mesh(noseGeom, bodyMat);
     nose.rotation.x = Math.PI / 2;
     nose.rotation.y = Math.PI / 4;
-    nose.position.set(0, 0.6, 1.6);
+    nose.position.set(0, 0.55, 1.6);
     this.kartRoot.add(nose);
 
     // Side Pods
     for (let side of [-1, 1]) {
-      const podGeom = new THREE.BoxGeometry(0.35, 0.4, 1.8);
+      const podGeom = new THREE.BoxGeometry(0.35, 0.35, 1.8);
       const pod = new THREE.Mesh(podGeom, bodyMat);
-      pod.position.set(side * 1.05, 0.6, -0.1);
+      pod.position.set(side * 1.05, 0.55, -0.1);
       this.kartRoot.add(pod);
     }
 
     // 3. Engine Block & Dual Chrome Exhausts
-    const engineGeom = new THREE.BoxGeometry(1.0, 0.6, 0.8);
+    const engineGeom = new THREE.BoxGeometry(1.0, 0.55, 0.8);
     const engineMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.9, roughness: 0.2 });
     const engine = new THREE.Mesh(engineGeom, engineMat);
-    engine.position.set(0, 0.8, -1.3);
+    engine.position.set(0, 0.72, -1.3);
     this.kartRoot.add(engine);
 
     const pipeGeom = new THREE.CylinderGeometry(0.12, 0.14, 0.6, 12);
@@ -101,49 +102,49 @@ export class KartVisual {
 
     this.exhaustL = new THREE.Mesh(pipeGeom, pipeMat);
     this.exhaustL.rotation.x = Math.PI / 2 + 0.2;
-    this.exhaustL.position.set(-0.35, 0.7, -1.8);
+    this.exhaustL.position.set(-0.35, 0.65, -1.8);
     this.kartRoot.add(this.exhaustL);
 
     this.exhaustR = new THREE.Mesh(pipeGeom, pipeMat);
     this.exhaustR.rotation.x = Math.PI / 2 + 0.2;
-    this.exhaustR.position.set(0.35, 0.7, -1.8);
+    this.exhaustR.position.set(0.35, 0.65, -1.8);
     this.kartRoot.add(this.exhaustR);
 
     // 4. Rear Spoiler Wing
     const wingGeom = new THREE.BoxGeometry(2.4, 0.1, 0.6);
     const wing = new THREE.Mesh(wingGeom, bodyMat);
-    wing.position.set(0, 1.3, -1.6);
+    wing.position.set(0, 1.2, -1.6);
     this.kartRoot.add(wing);
 
-    const strutGeom = new THREE.BoxGeometry(0.1, 0.6, 0.1);
+    const strutGeom = new THREE.BoxGeometry(0.1, 0.55, 0.1);
     for (let side of [-0.8, 0.8]) {
       const strut = new THREE.Mesh(strutGeom, chassisMat);
-      strut.position.set(side, 0.95, -1.6);
+      strut.position.set(side, 0.88, -1.6);
       this.kartRoot.add(strut);
     }
 
     // 5. Driver (Helmet & Visor)
     const driverGroup = new THREE.Group();
-    const helmetGeom = new THREE.SphereGeometry(0.42, 16, 16);
+    const helmetGeom = new THREE.SphereGeometry(0.4, 16, 16);
     const helmetMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
     const helmet = new THREE.Mesh(helmetGeom, helmetMat);
-    helmet.position.set(0, 1.15, 0.1);
+    helmet.position.set(0, 1.05, 0.1);
     driverGroup.add(helmet);
 
     // Visor
-    const visorGeom = new THREE.BoxGeometry(0.45, 0.2, 0.3);
+    const visorGeom = new THREE.BoxGeometry(0.42, 0.18, 0.28);
     const visorMat = new THREE.MeshStandardMaterial({
       color: 0x111111,
       metalness: 0.9,
       roughness: 0.1
     });
     const visor = new THREE.Mesh(visorGeom, visorMat);
-    visor.position.set(0, 1.18, 0.32);
+    visor.position.set(0, 1.08, 0.3);
     driverGroup.add(visor);
     this.driverHead = driverGroup;
     this.kartRoot.add(this.driverHead);
 
-    // 6. 4 Racing Wheels with Rims
+    // 6. 4 Racing Wheels with Rims (Bottom touches y = 0.0)
     const createWheel = (radius, width) => {
       const wGroup = new THREE.Group();
       const tireGeom = new THREE.CylinderGeometry(radius, radius, width, 16);
@@ -162,21 +163,36 @@ export class KartVisual {
       return wGroup;
     };
 
-    this.frontLeftWheel = createWheel(0.4, 0.35);
-    this.frontLeftWheel.position.set(-1.25, 0.4, 1.2);
+    this.frontLeftWheel = createWheel(0.38, 0.35);
+    this.frontLeftWheel.position.set(-1.25, 0.38, 1.2);
     this.kartRoot.add(this.frontLeftWheel);
 
-    this.frontRightWheel = createWheel(0.4, 0.35);
-    this.frontRightWheel.position.set(1.25, 0.4, 1.2);
+    this.frontRightWheel = createWheel(0.38, 0.35);
+    this.frontRightWheel.position.set(1.25, 0.38, 1.2);
     this.kartRoot.add(this.frontRightWheel);
 
-    this.rearLeftWheel = createWheel(0.48, 0.5);
-    this.rearLeftWheel.position.set(-1.3, 0.48, -1.2);
+    this.rearLeftWheel = createWheel(0.44, 0.48);
+    this.rearLeftWheel.position.set(-1.3, 0.44, -1.2);
     this.kartRoot.add(this.rearLeftWheel);
 
-    this.rearRightWheel = createWheel(0.48, 0.5);
-    this.rearRightWheel.position.set(1.3, 0.48, -1.2);
+    this.rearRightWheel = createWheel(0.44, 0.48);
+    this.rearRightWheel.position.set(1.3, 0.44, -1.2);
     this.kartRoot.add(this.rearRightWheel);
+  }
+
+  buildContactShadow() {
+    // Ground Contact Shadow Quad
+    const shadowGeom = new THREE.PlaneGeometry(3.0, 4.4);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false
+    });
+    this.contactShadow = new THREE.Mesh(shadowGeom, shadowMat);
+    this.contactShadow.rotation.x = -Math.PI / 2;
+    this.contactShadow.position.y = 0.01;
+    this.group.add(this.contactShadow);
   }
 
   buildDriftParticles() {
@@ -260,13 +276,13 @@ export class KartVisual {
 
   update(dt, speed, steer, driftTier, isBoosting, isInvincible, isZapped) {
     // 1. Wheel spin based on forward speed
-    this.wheelRotation -= speed * dt * 2.5;
+    this.wheelRotation -= speed * dt * 2.8;
     this.frontLeftWheel.children[0].rotation.x = this.wheelRotation;
     this.frontRightWheel.children[0].rotation.x = this.wheelRotation;
     this.rearLeftWheel.children[0].rotation.x = this.wheelRotation;
     this.rearRightWheel.children[0].rotation.x = this.wheelRotation;
 
-    // 2. Front wheel steering turn (inverted because kartRoot is rotated Math.PI)
+    // 2. Front wheel steering turn
     this.frontLeftWheel.rotation.y = -steer * 0.45;
     this.frontRightWheel.rotation.y = -steer * 0.45;
 
@@ -365,7 +381,6 @@ export class KartVisual {
           const flame = this.flameData[pIdx];
           flame.active = true;
           flame.life = 0;
-          // Shoot flames backward (+Z in local group coords)
           flame.vel.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 15 + Math.random() * 10);
           flame.vel.applyQuaternion(this.group.quaternion);
 

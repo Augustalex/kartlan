@@ -1,7 +1,7 @@
 /**
  * KARTLAN 3D - Arcade Kart Physics & Controller Engine
- * Features: Raycast-assisted grounding, hop & 3-tier drift mini-turbos,
- * counter-steering dynamics, drafting/slipstream, jump ramp stunts, and bumping.
+ * Features: Raycast-assisted grounding, track slope pitch & roll alignment,
+ * hop & 3-tier drift mini-turbos, suspension dynamics, and drafting.
  */
 
 import * as THREE from './three.module.min.js';
@@ -13,7 +13,7 @@ export class KartPhysics {
     this.isLocal = isLocal;
 
     // Spatial State
-    this.position = new THREE.Vector3(0, 0.5, 0);
+    this.position = new THREE.Vector3(0, 0.05, 0);
     this.quaternion = new THREE.Quaternion();
     this.velocity = new THREE.Vector3();
     this.heading = 0; // Y-axis rotation in radians
@@ -21,6 +21,10 @@ export class KartPhysics {
     this.roll = 0;
     this.verticalVelocity = 0;
     this.isGrounded = true;
+
+    // Suspension & Grounding
+    this.rideHeight = 0.04; // Exact tire contact patch on road
+    this.suspensionCompression = 0;
 
     // Speed & Acceleration Specs
     this.speed = 0;
@@ -88,7 +92,7 @@ export class KartPhysics {
     if (isBoosting) {
       currentMaxSpeed = 52.0;
     } else if (isOffRoad) {
-      currentMaxSpeed = 16.0; // Off-road slow down unless boosting
+      currentMaxSpeed = 16.0;
     }
 
     if (this.isZapped) {
@@ -96,20 +100,22 @@ export class KartPhysics {
     }
 
     // 2. Throttle & Braking
+    let targetPitch = 0;
     if (input.accelerate) {
+      targetPitch = 0.025; // Slight rear squat on acceleration
       if (this.speed < currentMaxSpeed) {
         this.speed += this.acceleration * dt;
       } else {
         this.speed -= this.drag * 1.5 * dt;
       }
     } else if (input.brake) {
+      targetPitch = -0.035; // Slight nose dive on braking
       if (this.speed > 0) {
         this.speed -= this.braking * dt;
       } else if (this.speed > this.maxReverseSpeed) {
         this.speed -= this.acceleration * 0.7 * dt;
       }
     } else {
-      // Natural rolling drag
       if (this.speed > 0) {
         this.speed = Math.max(0, this.speed - this.drag * dt);
       } else if (this.speed < 0) {
@@ -127,33 +133,29 @@ export class KartPhysics {
     if (input.analogSteer !== undefined) steerAmount = -input.analogSteer;
 
     if (this.isDrifting) {
-      // Drift steering: base drift turn + counter-steer slip adjustment
       const steerInfluence = steerAmount * this.driftDirection;
       const turnMultiplier = steerInfluence > 0 ? 1.35 : 0.75;
       this.heading += this.driftDirection * this.turnRate * turnMultiplier * dt * (this.speed / this.maxSpeed);
 
-      // Charge mini-turbo sparks
       const chargeRate = steerInfluence > 0 ? 1.4 : 0.8;
       this.driftChargeTime += dt * chargeRate;
 
       const prevTier = this.driftTier;
       if (this.driftChargeTime > 3.8) {
-        this.driftTier = 3; // Purple
+        this.driftTier = 3;
       } else if (this.driftChargeTime > 2.3) {
-        this.driftTier = 2; // Orange
+        this.driftTier = 2;
       } else if (this.driftChargeTime > 1.1) {
-        this.driftTier = 1; // Blue
+        this.driftTier = 1;
       }
 
       if (this.driftTier > prevTier && this.isLocal) {
         sound.playMiniTurboCharge(this.driftTier);
       }
 
-      // Smooth visual drift tilt angle
       const targetVisualAngle = this.driftDirection * 0.45;
       this.driftVisualAngle = THREE.MathUtils.lerp(this.driftVisualAngle, targetVisualAngle, dt * 10);
     } else {
-      // Normal steering (scaled with speed)
       if (Math.abs(this.speed) > 0.5) {
         const speedFactor = Math.min(Math.abs(this.speed) / (this.maxSpeed * 0.7), 1.0);
         this.heading += steerAmount * this.turnRate * speedFactor * dt * Math.sign(this.speed);
@@ -171,7 +173,7 @@ export class KartPhysics {
     this.position.x += this.velocity.x * dt;
     this.position.z += this.velocity.z * dt;
 
-    // 6. Raycast & Ground Elevation Following
+    // 6. Raycast & Ground Elevation Following (Hugging Road Surface)
     this.updateGrounding(dt);
 
     // 7. Check Boost Pads & Jump Ramps
@@ -189,10 +191,10 @@ export class KartPhysics {
     // 8. Drafting / Slipstream Detection
     this.updateDrafting(dt, otherKarts);
 
-    // 9. Kart-to-Kart Elastic Bumping
+    // 9. Kart-to-Kart Collisions
     this.updateKartCollisions(dt, otherKarts);
 
-    // 10. Update Checkpoints & Track Progression
+    // 10. Update Checkpoints & Progression
     this.updateTrackProgress();
 
     // 11. Audio feedback
@@ -202,11 +204,19 @@ export class KartPhysics {
       sound.setDriftScreech(this.isDrifting, this.driftTier / 3.0 + 0.5);
     }
 
-    // Update quaternion with heading and visual drift offset
-    const totalHeading = this.heading + this.driftVisualAngle;
-    this.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), totalHeading);
+    // 12. Orientation with Slope & Chassis Banking
+    const closest = this.track.findClosestWaypoint(this.position);
+    const slopePitch = Math.atan2(closest.tangent.y, Math.hypot(closest.tangent.x, closest.tangent.z));
+    const targetRoll = (this.isDrifting ? this.driftDirection * 0.08 : steerAmount * 0.05) * (this.speed / this.maxSpeed);
 
-    // Smooth camera FOV kick
+    this.pitch = THREE.MathUtils.lerp(this.pitch, targetPitch + slopePitch, dt * 8);
+    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, dt * 8);
+
+    const totalHeading = this.heading + this.driftVisualAngle;
+    const euler = new THREE.Euler(this.pitch, totalHeading, this.roll, 'YXZ');
+    this.quaternion.setFromEuler(euler);
+
+    // Camera FOV & Shake
     const targetFov = isBoosting ? 14 : (this.speed > 30 ? 6 : 0);
     this.fovKick = THREE.MathUtils.lerp(this.fovKick, targetFov, dt * 6);
     this.cameraShake = Math.max(0, this.cameraShake - dt * 2.5);
@@ -215,9 +225,8 @@ export class KartPhysics {
   updateDrift(dt, input) {
     const driftPressed = !!input.drift;
 
-    // On Button Down -> Hop!
     if (driftPressed && !this.prevDriftButton && this.isGrounded) {
-      this.verticalVelocity = 4.2;
+      this.verticalVelocity = 3.6;
       this.isGrounded = false;
       if (this.isLocal) sound.playHop();
 
@@ -234,7 +243,6 @@ export class KartPhysics {
       }
     }
 
-    // On Button Release -> Release Mini-Turbo Boost!
     if (!driftPressed && this.prevDriftButton && this.isDrifting) {
       this.isDrifting = false;
       if (this.driftTier > 0) {
@@ -247,7 +255,6 @@ export class KartPhysics {
       this.driftChargeTime = 0;
     }
 
-    // Cancel drift if slowed down to a stop
     if (this.isDrifting && this.speed < 6) {
       this.isDrifting = false;
       this.driftTier = 0;
@@ -266,10 +273,10 @@ export class KartPhysics {
 
   updateGrounding(dt) {
     const closest = this.track.findClosestWaypoint(this.position);
-    const targetY = closest.point.y + 0.45;
+    const targetY = closest.point.y + this.rideHeight;
 
     if (!this.isGrounded) {
-      this.verticalVelocity -= 28.0 * dt; // Gravity
+      this.verticalVelocity -= 28.0 * dt;
       this.position.y += this.verticalVelocity * dt;
 
       if (this.position.y <= targetY) {
@@ -278,8 +285,8 @@ export class KartPhysics {
         this.isGrounded = true;
       }
     } else {
-      // Snap to road height with smooth spring damping
-      this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, dt * 15);
+      // Snaps directly to road surface without floating
+      this.position.y = THREE.MathUtils.lerp(this.position.y, targetY, dt * 20);
     }
   }
 
@@ -296,7 +303,7 @@ export class KartPhysics {
 
       if (dist > 3.0 && dist < 18.0) {
         const dot = forwardVec.dot(toOther.clone().normalize());
-        if (dot > 0.92) { // Directly in front cone
+        if (dot > 0.92) {
           inSlipstream = true;
           break;
         }
@@ -306,7 +313,6 @@ export class KartPhysics {
     if (inSlipstream && this.speed > 25) {
       this.draftTimer += dt;
       if (this.draftTimer >= 1.4) {
-        // Slipstream turbo triggered!
         this.applyBoost(2.0, 1.4);
         this.draftTimer = 0;
       }
@@ -324,7 +330,6 @@ export class KartPhysics {
       const dist = Math.hypot(dx, dz);
 
       if (dist < kartRadius * 2 && dist > 0.001) {
-        // Overlap detected! Elastic impulse push
         const nx = dx / dist;
         const nz = dz / dist;
         const overlap = (kartRadius * 2 - dist) * 0.5;
@@ -332,13 +337,11 @@ export class KartPhysics {
         this.position.x += nx * overlap;
         this.position.z += nz * overlap;
 
-        // If one kart has Starman invincibility, spin out the other!
         if (this.isInvincible && !other.isInvincible) {
           other.spinOut();
         } else if (other.isInvincible && !this.isInvincible) {
           this.spinOut();
         } else {
-          // Normal bump impulse
           this.speed *= 0.92;
           this.cameraShake = 0.3;
         }
@@ -350,7 +353,6 @@ export class KartPhysics {
     const closest = this.track.findClosestWaypoint(this.position);
     this.lapProgress = closest.progress;
 
-    // Check lap completion (cross from end of track ~0.9 to start ~0.1)
     const prevIdx = this.lastClosestWpIndex;
     const currIdx = closest.index;
     const totalWp = this.track.waypoints.length;
@@ -396,7 +398,7 @@ export class KartPhysics {
 
   updateSpinOut(dt) {
     this.spinOutTimer -= dt;
-    this.heading += Math.PI * 4 * dt; // 720 degree spin
+    this.heading += Math.PI * 4 * dt;
     const totalHeading = this.heading;
     this.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), totalHeading);
   }
