@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>KARTLAN 3D - Wi-Fi LAN Multiplayer Kart Racer</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- 3D WebGL Canvas Container -->
+  <div id="game-container"></div>
+
+  <!-- UI Screens -->
+  <div id="ui-overlay">
+    
+    <!-- 1. MAIN MENU SCREEN -->
+    <div id="screen-menu" class="screen-panel">
+      <div class="menu-header">
+        <h1 class="logo-title">KART<span class="highlight">LAN</span> 3D</h1>
+        <p class="tagline">ARCADE WI-FI LAN MULTIPLAYER RACER</p>
+      </div>
+
+      <div class="menu-content-grid">
+        <!-- Player Customization Card -->
+        <div class="panel-card">
+          <h2 class="card-title">RACER PROFILE</h2>
+          <div class="form-group">
+            <label for="input-player-name">PILOT NAME</label>
+            <input type="text" id="input-player-name" maxlength="14" placeholder="Enter name..." value="TurboAce">
+          </div>
+
+          <div class="form-group">
+            <label>KART LIVERY COLOR</label>
+            <div class="color-picker-grid">
+              <button class="color-swatch active" data-color="#00f0ff" style="background: #00f0ff;"></button>
+              <button class="color-swatch" data-color="#ff0055" style="background: #ff0055;"></button>
+              <button class="color-swatch" data-color="#00ff66" style="background: #00ff66;"></button>
+              <button class="color-swatch" data-color="#ffaa00" style="background: #ffaa00;"></button>
+              <button class="color-swatch" data-color="#b000ff" style="background: #b000ff;"></button>
+              <button class="color-swatch" data-color="#ffffff" style="background: #ffffff;"></button>
+            </div>
+          </div>
+
+          <div class="actions-stack">
+            <button id="btn-singleplayer" class="btn btn-accent btn-large">
+              🏎️ SINGLEPLAYER GRAND PRIX
+            </button>
+            <button id="btn-host-lan" class="btn btn-primary btn-large">
+              ⚡ HOST LAN RACE
+            </button>
+          </div>
+        </div>
+
+        <!-- LAN Races Browser Card -->
+        <div class="panel-card">
+          <div class="card-header-flex">
+            <h2 class="card-title">OPEN LAN RACES</h2>
+            <button id="btn-refresh-rooms" class="btn btn-secondary btn-small">🔄 SCAN LAN</button>
+          </div>
+
+          <div class="lan-info-banner">
+            <span>📡 SHARE WI-FI LINK:</span>
+            <div id="lan-ip-display">Scanning network...</div>
+          </div>
+
+          <div id="lan-rooms-list" class="rooms-scroll-list">
+            <div class="loading-text">Scanning Wi-Fi LAN for open games...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls Reference Footer -->
+      <div class="controls-guide">
+        <div class="ctrl-item"><span class="key-badge">W / ↑ / RT</span> Drive</div>
+        <div class="ctrl-item"><span class="key-badge">S / ↓ / LT</span> Brake/Rev</div>
+        <div class="ctrl-item"><span class="key-badge">A D / ← →</span> Steer</div>
+        <div class="ctrl-item"><span class="key-badge">SPACE / RB</span> Hop &amp; Drift (Charge 3-Tier Sparks)</div>
+        <div class="ctrl-item"><span class="key-badge">E / LB</span> Use Item</div>
+        <div class="ctrl-item"><span class="key-badge">C</span> Look Back</div>
+      </div>
+    </div>
+
+    <!-- 2. LOBBY SCREEN -->
+    <div id="screen-lobby" class="screen-panel hidden">
+      <div class="lobby-header">
+        <h1 id="lobby-room-name" class="logo-title">RACE LOBBY</h1>
+        <div class="lobby-meta">
+          <label>TRACK:</label>
+          <select id="lobby-track-select" class="track-select-dropdown">
+            <option value="circuit_neon">NEON CIRCUIT (Urban)</option>
+            <option value="sunset_canyon">SUNSET CANYON (Desert)</option>
+            <option value="galaxy_space">GALAXY HIGHWAY (Cosmic)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="lobby-content">
+        <h3 class="grid-subtitle">RACERS IN GRID</h3>
+        <div id="lobby-players-grid" class="lobby-grid"></div>
+      </div>
+
+      <div class="lobby-footer">
+        <button id="btn-leave-lobby" class="btn btn-danger">LEAVE</button>
+        <button id="btn-toggle-ready" class="btn btn-secondary">SET READY</button>
+        <button id="btn-start-race" class="btn btn-accent btn-large">🏁 START RACE</button>
+      </div>
+    </div>
+
+    <!-- 3. IN-GAME HUD OVERLAY -->
+    <div id="screen-hud" class="hud-layer hidden">
+      <!-- Top Left: Rank Badge -->
+      <div class="hud-top-left">
+        <div class="rank-container">
+          <div class="rank-label">POSITION</div>
+          <div id="hud-rank-num" class="rank-display">1ST</div>
+        </div>
+        <div class="lap-container">
+          <span id="hud-lap-text" class="lap-display">LAP 1 / 3</span>
+        </div>
+      </div>
+
+      <!-- Top Right: Item Slot Machine -->
+      <div class="hud-top-right">
+        <div class="item-slot-frame">
+          <div id="hud-item-icon" class="item-icon-box"></div>
+        </div>
+        <div class="network-badge">
+          <span id="server-status" class="badge badge-green">Connected</span>
+          <span id="hud-ping" class="ping-text">12ms</span>
+        </div>
+      </div>
+
+      <!-- Bottom Right: Speedometer & Minimap -->
+      <div class="hud-bottom-right">
+        <div class="speedometer-box">
+          <div id="hud-speed-num" class="speed-number">0</div>
+          <div class="speed-unit">KM/H</div>
+        </div>
+        <div class="minimap-frame">
+          <canvas id="minimap-canvas" width="180" height="180"></canvas>
+        </div>
+      </div>
+
+      <!-- Center: Countdown Banner -->
+      <div id="hud-countdown" class="countdown-overlay hidden">3</div>
+
+      <!-- Mobile Touch Controls -->
+      <div id="touch-controls" class="touch-overlay">
+        <div class="touch-group touch-left">
+          <button id="touch-left" class="touch-btn">◀</button>
+          <button id="touch-right" class="touch-btn">▶</button>
+        </div>
+        <div class="touch-group touch-right">
+          <button id="touch-item" class="touch-btn touch-item">ITEM</button>
+          <button id="touch-drift" class="touch-btn touch-drift">DRIFT</button>
+          <button id="touch-brake" class="touch-btn touch-brake">BRAKE</button>
+          <button id="touch-gas" class="touch-btn touch-gas">GAS</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. RACE PODIUM / RESULTS SCREEN -->
+    <div id="screen-podium" class="screen-panel hidden">
+      <div class="podium-header">
+        <h1 class="logo-title">RACE RESULTS</h1>
+        <p class="tagline">GRAND PRIX FINAL STANDINGS</p>
+      </div>
+
+      <div class="podium-container">
+        <div id="podium-results-list" class="podium-list"></div>
+      </div>
+
+      <div class="podium-footer">
+        <button id="btn-podium-menu" class="btn btn-accent btn-large">MAIN MENU</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Scripts -->
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>

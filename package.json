@@ -1,0 +1,38 @@
+{
+  "name": "kartlan",
+  "version": "1.0.0",
+  "description": "3D Arcade LAN Multiplayer Kart Racer with Drift Physics, Items, and Synthesized Audio",
+  "main": "server.js",
+  "bin": {
+    "kartlan": "./bin/kartlan"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "server": "node server.js --server",
+    "test": "node test/server.test.js",
+    "build:deb": "bash scripts/build-deb.sh",
+    "build:tar": "bash scripts/build-tar.sh",
+    "build:all": "bash scripts/build-deb.sh && bash scripts/build-tar.sh"
+  },
+  "keywords": [
+    "kart",
+    "racing",
+    "multiplayer",
+    "lan",
+    "threejs",
+    "webgl",
+    "game",
+    "arcade",
+    "mario-kart"
+  ],
+  "author": "Augustalex",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "three": "^0.185.1",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
