@@ -1,80 +1,84 @@
 /**
- * KARTLAN 3D - Main Game Client Coordinator
- * Orchestrates 3D rendering, arcade drift physics, camera juice,
- * dynamic HUD minimap, audio synchronization, and LAN multiplayer.
+ * KARTLAN 3D - Main Game Coordinator
+ * Features: Three.js renderer, dynamic track manager, arcade physics,
+ * real-time LAN subnet scanning & direct IP connect, HUD, audio & input.
  */
 
 import * as THREE from './three.module.min.js';
-import { sound } from './audio.js';
 import { Track } from './tracks.js';
 import { KartPhysics } from './physics.js';
 import { KartVisual } from './kart-models.js';
 import { ItemManager } from './items.js';
-import { InputController } from './input.js';
+import { InputManager } from './input.js';
 import { NetworkClient } from './network.js';
 import { BotController } from './ai.js';
+import { sound } from './audio.js';
 
 class Game {
   constructor() {
-    this.container = document.getElementById('game-container');
+    this.gameState = 'menu'; // 'menu' | 'lobby' | 'countdown' | 'racing' | 'podium'
+    this.currentTrackId = 'circuit_neon';
+    this.isSinglePlayer = false;
+
+    // Three.js Core
     this.scene = null;
     this.camera = null;
     this.renderer = null;
+    this.clock = new THREE.Clock();
 
+    // Game Objects
     this.track = null;
+    this.itemManager = null;
     this.localPhysics = null;
     this.localVisual = null;
-    this.itemManager = null;
-    this.input = new InputController();
-    this.net = new NetworkClient();
+    this.remoteKarts = new Map(); // id -> { physics, visual, botController, lap, ... }
 
-    // Multi-kart entities
-    this.remoteKarts = new Map(); // id -> { visual, physics, botController }
-    this.localPlayerId = 'p_local';
+    // Networking
+    this.net = new NetworkClient();
+    this.localPlayerId = null;
     this.localName = 'TurboAce';
     this.localColor = '#00f0ff';
+    this.currentRoom = null;
+    this.directHost = null;
 
-    // Game state
-    this.gameState = 'menu'; // 'menu' | 'lobby' | 'countdown' | 'racing' | 'podium'
-    this.currentTrackId = 'circuit_neon';
-    this.totalLaps = 3;
+    // Race Progress & Timing
     this.currentLap = 1;
-    this.raceStartTime = 0;
+    this.totalLaps = 3;
     this.lapStartTime = 0;
-    this.currentItem = null;
-    this.isSinglePlayer = false;
+    this.raceStartTime = 0;
+    this.lastSendTickTime = 0;
 
-    // Minimap canvas
+    // Minimap
     this.minimapCanvas = document.getElementById('minimap-canvas');
     this.minimapCtx = this.minimapCanvas ? this.minimapCanvas.getContext('2d') : null;
 
-    // Clock
-    this.clock = new THREE.Clock();
-    this.lastSendTickTime = 0;
-
-    this.initRenderer();
+    this.input = new InputManager();
+    this.initGraphics();
     this.loadTrack(this.currentTrackId);
     this.initNetwork();
     this.initUI();
     this.animate();
   }
 
-  initRenderer() {
+  initGraphics() {
+    const container = document.getElementById('game-container');
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x070b19);
-    this.scene.fog = new THREE.FogExp2(0x070b19, 0.0035);
+    this.scene.background = new THREE.Color(0x0a0a1a);
+    this.scene.fog = new THREE.FogExp2(0x0a0a1a, 0.0035);
 
-    this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.5, 1200);
-    this.camera.position.set(0, 10, -20);
+    this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 1500);
+    this.camera.position.set(0, 10, 20);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.container.appendChild(this.renderer.domElement);
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.1;
+    container.appendChild(this.renderer.domElement);
 
-    // Lights
+    // Global Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
     this.scene.add(ambientLight);
 
@@ -83,6 +87,8 @@ class Game {
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 400;
     const d = 120;
     dirLight.shadow.camera.left = -d;
     dirLight.shadow.camera.right = d;
@@ -101,7 +107,6 @@ class Game {
   }
 
   loadTrack(trackId) {
-    // Clear old elements
     if (this.track) {
       while (this.scene.children.length > 0) {
         this.scene.remove(this.scene.children[0]);
@@ -119,17 +124,15 @@ class Game {
     this.scene.background = new THREE.Color(this.track.config.skyColor);
     this.scene.fog.color = new THREE.Color(this.track.config.fogColor);
 
-    // Item manager
     this.itemManager = new ItemManager(this.scene, this.track);
 
-    // Local Kart
     this.localPhysics = new KartPhysics(this.track, true);
     this.localVisual = new KartVisual(this.scene, this.localColor, true);
 
     const startWp = this.track.waypoints[0];
     this.localPhysics.setPosition(
       startWp.point.x - 3.5,
-      startWp.point.y + 0.5,
+      startWp.point.y + 0.05,
       startWp.point.z,
       Math.atan2(-startWp.tangent.x, -startWp.tangent.z)
     );
@@ -158,6 +161,7 @@ class Game {
     });
 
     this.net.on('room_joined', (data) => {
+      this.currentRoom = data.room;
       this.localPlayerId = data.playerId;
       this.showLobbyScreen(data.room, data.players);
     });
@@ -168,7 +172,12 @@ class Game {
 
     this.net.on('player_left', (data) => {
       this.updateLobbyPlayers(data.players);
-      this.removeRemoteKart(data.playerId);
+      if (data.newHostId && data.newHostId === this.localPlayerId) {
+        const startBtn = document.getElementById('btn-start-race');
+        if (startBtn) startBtn.style.display = 'block';
+        const trackSelect = document.getElementById('lobby-track-select');
+        if (trackSelect) trackSelect.disabled = false;
+      }
     });
 
     this.net.on('player_ready_changed', (data) => {
@@ -176,6 +185,7 @@ class Game {
     });
 
     this.net.on('room_settings_updated', (data) => {
+      this.currentRoom = data.room;
       this.updateLobbySettings(data.room);
     });
 
@@ -199,19 +209,22 @@ class Game {
     });
 
     this.net.on('item_box_collected', (data) => {
+      this.itemManager.collectBox(data.boxId);
       if (data.playerId === this.localPlayerId) {
-        this.setItem(data.item);
+        sound.playItemBoxSpin();
+        setTimeout(() => {
+          sound.playItemBoxGet();
+          this.showItemHUD(data.item);
+        }, 1200);
       }
     });
 
     this.net.on('item_box_respawned', (data) => {
-      const box = this.itemManager.itemBoxes.find(b => b.id === data.boxId);
-      if (box) box.active = true;
+      this.itemManager.respawnBox(data.boxId);
     });
 
     this.net.on('projectile_spawned', (data) => {
       this.itemManager.spawnProjectileVisual(data.projectile);
-      sound.playShellFire();
     });
 
     this.net.on('projectile_destroyed', (data) => {
@@ -221,9 +234,21 @@ class Game {
     this.net.on('player_hit', (data) => {
       if (data.targetId === this.localPlayerId) {
         this.localPhysics.spinOut();
-        this.input.vibrate(0.8, 400);
       }
-      sound.playExplosion();
+    });
+
+    this.net.on('item_used_boost', (data) => {
+      if (data.playerId === this.localPlayerId) {
+        this.localPhysics.applyBoost(3.0, 1.45);
+      }
+    });
+
+    this.net.on('item_used_star', (data) => {
+      if (data.playerId === this.localPlayerId) {
+        this.localPhysics.isInvincible = true;
+        this.localPhysics.invincibleTimer = data.duration / 1000;
+        sound.playStarmanMusic();
+      }
     });
 
     this.net.on('player_zapped', (data) => {
@@ -241,7 +266,6 @@ class Game {
   }
 
   initUI() {
-    // Menu Buttons
     const btnSingle = document.getElementById('btn-singleplayer');
     if (btnSingle) {
       btnSingle.onclick = (e) => {
@@ -265,6 +289,22 @@ class Game {
       btnRefresh.onclick = (e) => {
         e.preventDefault();
         this.refreshLanRooms();
+      };
+    }
+
+    const btnDirect = document.getElementById('btn-direct-connect');
+    const inputDirect = document.getElementById('input-direct-ip');
+    if (btnDirect && inputDirect) {
+      btnDirect.onclick = async (e) => {
+        e.preventDefault();
+        let target = inputDirect.value.trim();
+        if (!target) return;
+        if (!target.includes(':')) target = `${target}:3030`;
+        target = target.replace(/^http:\/\//, '').replace(/^https:\/\//, '');
+
+        this.directHost = target;
+        this.net.connect(target);
+        await this.refreshLanRooms(target);
       };
     }
 
@@ -303,7 +343,6 @@ class Game {
       };
     }
 
-    // Track selector change
     const trackSelect = document.getElementById('lobby-track-select');
     if (trackSelect) {
       trackSelect.onchange = (e) => {
@@ -311,7 +350,6 @@ class Game {
       };
     }
 
-    // Kart Color picker
     const colorButtons = document.querySelectorAll('.color-swatch');
     colorButtons.forEach(btn => {
       btn.onclick = (e) => {
@@ -326,7 +364,6 @@ class Game {
       };
     });
 
-    // Auto connect to host WebSocket
     this.net.connect();
     this.refreshLanRooms();
   }
@@ -341,12 +378,14 @@ class Game {
     this.refreshLanRooms();
   }
 
-  async refreshLanRooms() {
+  async refreshLanRooms(customHost = null) {
     const roomsList = document.getElementById('lan-rooms-list');
     if (!roomsList) return;
-    roomsList.innerHTML = '<div class="loading-text">Scanning LAN for games...</div>';
+    roomsList.innerHTML = '<div class="loading-text">Scanning Wi-Fi LAN for open games...</div>';
 
-    const info = await this.net.getServerInfo();
+    const currentTarget = customHost || this.directHost || window.location.host;
+    const info = await this.net.getServerInfo(currentTarget);
+
     if (info && info.lanIps) {
       const ipList = document.getElementById('lan-ip-display');
       if (ipList) {
@@ -354,26 +393,48 @@ class Game {
       }
     }
 
-    const rooms = await this.net.discoverLanRooms();
-    if (!rooms || rooms.length === 0) {
-      roomsList.innerHTML = '<div class="empty-rooms">No open LAN races found. Host one below!</div>';
+    let allRooms = [];
+    const directRooms = await this.net.discoverLanRooms(currentTarget);
+    if (directRooms) allRooms.push(...directRooms);
+
+    // Auto-scan local subnet if on localhost or discovered IP
+    if (info && info.lanIps && info.lanIps.length > 0) {
+      const mainIp = info.lanIps[0].address;
+      const parts = mainIp.split('.');
+      if (parts.length === 4) {
+        const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
+        const subnetRooms = await this.net.scanSubnet(prefix, info.port || 3030);
+        for (const r of subnetRooms) {
+          if (!allRooms.some(existing => existing.id === r.id)) {
+            allRooms.push(r);
+          }
+        }
+      }
+    }
+
+    if (allRooms.length === 0) {
+      roomsList.innerHTML = '<div class="empty-rooms">No open LAN races found. Host one or enter Host IP above!</div>';
       return;
     }
 
     roomsList.innerHTML = '';
-    rooms.forEach(room => {
+    allRooms.forEach(room => {
       const item = document.createElement('div');
       item.className = 'room-card';
       item.innerHTML = `
         <div class="room-info">
           <div class="room-title">${room.name}</div>
-          <div class="room-details">${room.trackId.toUpperCase()} • ${room.playerCount}/${room.maxPlayers} Players • ${room.laps} Laps</div>
+          <div class="room-details">${room.trackId.toUpperCase()} • ${room.playerCount}/${room.maxPlayers} Players • ${room.laps} Laps • 📡 ${room.hostAddress || currentTarget}</div>
         </div>
         <button class="btn btn-primary btn-join" data-id="${room.id}">JOIN RACE</button>
       `;
-      item.querySelector('.btn-join').onclick = (e) => {
+      item.querySelector('.btn-join').onclick = async (e) => {
         e.preventDefault();
         sound.resume();
+        if (room.hostAddress && room.hostAddress !== this.net.currentHost) {
+          this.net.connect(room.hostAddress);
+          await new Promise(r => setTimeout(r, 200));
+        }
         this.joinLanRoom(room.id);
       };
       roomsList.appendChild(item);
@@ -456,26 +517,22 @@ class Game {
     this.currentTrackId = 'circuit_neon';
     this.totalLaps = 3;
 
-    // Load track if needed
     if (!this.track || this.currentTrackId !== 'circuit_neon') {
       this.loadTrack('circuit_neon');
     }
 
-    // Reset local kart
     const startWp = this.track.waypoints[0];
     const startAngle = Math.atan2(-startWp.tangent.x, -startWp.tangent.z);
-    this.localPhysics.setPosition(startWp.point.x - 3.5, startWp.point.y + 0.5, startWp.point.z, startAngle);
+    this.localPhysics.setPosition(startWp.point.x - 3.5, startWp.point.y + 0.05, startWp.point.z, startAngle);
     this.localPhysics.currentLap = 1;
     this.localPhysics.lapProgress = 0;
     this.localPhysics.speed = 0;
 
-    // Clean up old remote karts
     for (const r of this.remoteKarts.values()) {
       if (r.visual) r.visual.destroy();
     }
     this.remoteKarts.clear();
 
-    // Spawn 5 AI bots
     const botColors = ['#ff0055', '#00ff66', '#ffaa00', '#aa00ff', '#ffffff'];
     for (let i = 0; i < 5; i++) {
       const botId = `bot_${i + 1}`;
@@ -485,7 +542,7 @@ class Game {
 
       const row = Math.floor((i + 1) / 2);
       const col = ((i + 1) % 2) === 0 ? -3.5 : 3.5;
-      phys.setPosition(startWp.point.x + col, startWp.point.y + 0.5, startWp.point.z - row * 9, startAngle);
+      phys.setPosition(startWp.point.x + col, startWp.point.y + 0.05, startWp.point.z - row * 9, startAngle);
 
       this.remoteKarts.set(botId, {
         id: botId,
@@ -498,7 +555,6 @@ class Game {
       });
     }
 
-    // Switch screen to HUD
     this.gameState = 'countdown';
     this.currentLap = 1;
     document.getElementById('screen-lobby').classList.add('hidden');
@@ -543,17 +599,15 @@ class Game {
 
     const startWp = this.track.waypoints[0];
     const startAngle = Math.atan2(-startWp.tangent.x, -startWp.tangent.z);
-    this.localPhysics.setPosition(startWp.point.x - 3.5, startWp.point.y + 0.5, startWp.point.z, startAngle);
+    this.localPhysics.setPosition(startWp.point.x - 3.5, startWp.point.y + 0.05, startWp.point.z, startAngle);
 
-    // Initialize remote players from lobby
     if (data.players) {
-      // Clear old remote karts
       for (const r of this.remoteKarts.values()) {
         if (r.visual) r.visual.destroy();
       }
       this.remoteKarts.clear();
 
-      data.players.forEach((p, idx) => {
+      data.players.forEach(p => {
         if (p.id !== this.localPlayerId) {
           const vis = new KartVisual(this.scene, p.color, false);
           this.remoteKarts.set(p.id, {
@@ -574,10 +628,13 @@ class Game {
 
   showCountdown(text) {
     const el = document.getElementById('hud-countdown');
-    if (!el) return;
-    el.innerText = text;
-    el.classList.remove('hidden');
-    el.classList.add('pulse-anim');
+    if (el) {
+      el.innerText = text;
+      el.classList.remove('hidden');
+      el.classList.remove('pulse-anim');
+      void el.offsetWidth;
+      el.classList.add('pulse-anim');
+    }
   }
 
   hideCountdown() {
@@ -585,138 +642,102 @@ class Game {
     if (el) el.classList.add('hidden');
   }
 
-  setItem(itemType) {
-    this.currentItem = itemType;
-    const itemBoxEl = document.getElementById('hud-item-icon');
-    if (!itemBoxEl) return;
-    const itemNames = {
+  showItemHUD(itemType) {
+    const el = document.getElementById('hud-item-icon');
+    if (!el) return;
+    const icons = {
+      'BANANA': '🍌 BANANA',
       'GREEN_SHELL': '🟢 GREEN SHELL',
       'RED_SHELL': '🔴 RED SHELL',
-      'BANANA': '🍌 BANANA',
       'MUSHROOM': '🍄 MUSHROOM',
       'STAR': '⭐ STARMAN',
       'LIGHTNING': '⚡ LIGHTNING'
     };
-    itemBoxEl.innerText = itemNames[itemType] || itemType;
-    itemBoxEl.classList.add('item-pop-anim');
-    sound.playItemGet();
+    el.innerText = icons[itemType] || itemType;
+    el.parentElement.classList.remove('item-pop-anim');
+    void el.parentElement.offsetWidth;
+    el.parentElement.classList.add('item-pop-anim');
   }
 
-  useItem() {
-    if (!this.currentItem) return;
-    const item = this.currentItem;
-    this.currentItem = null;
-    const iconEl = document.getElementById('hud-item-icon');
-    if (iconEl) iconEl.innerText = '';
-
-    if (this.isSinglePlayer) {
-      if (item === 'MUSHROOM') {
-        this.localPhysics.applyBoost(3.0, 1.45);
-      } else if (item === 'STAR') {
-        this.localPhysics.isInvincible = true;
-        this.localPhysics.invincibleTimer = 7.5;
-        this.localPhysics.applyBoost(7.5, 1.35);
-      } else if (item === 'LIGHTNING') {
-        for (const r of this.remoteKarts.values()) {
-          if (r.physics) {
-            r.physics.isZapped = true;
-            r.physics.zappedTimer = 5.0;
-          }
-        }
-        sound.playZap();
-      } else {
-        const forwardX = -Math.sin(this.localPhysics.heading);
-        const forwardZ = -Math.cos(this.localPhysics.heading);
-        const spawnPos = {
-          x: this.localPhysics.position.x + (item === 'BANANA' ? -forwardX * 2.5 : forwardX * 3.0),
-          y: this.localPhysics.position.y + 0.4,
-          z: this.localPhysics.position.z + (item === 'BANANA' ? -forwardZ * 2.5 : forwardZ * 3.0)
-        };
-        const proj = {
-          id: `sp_proj_${Date.now()}`,
-          type: item,
-          position: spawnPos
-        };
-        this.itemManager.spawnProjectileVisual(proj);
-        sound.playShellFire();
-      }
-    } else {
-      this.net.send({
-        type: 'use_item',
-        heading: this.localPhysics.heading
-      });
-    }
-  }
-
-  removeRemoteKart(playerId) {
-    const r = this.remoteKarts.get(playerId);
-    if (r) {
-      if (r.visual) r.visual.destroy();
-      this.remoteKarts.delete(playerId);
-    }
+  clearItemHUD() {
+    const el = document.getElementById('hud-item-icon');
+    if (el) el.innerText = '';
   }
 
   update(dt) {
-    if (!this.track || !this.localPhysics) return;
+    if (this.gameState === 'menu' || this.gameState === 'lobby') {
+      if (this.camera) {
+        this.camera.position.x = Math.sin(Date.now() * 0.0003) * 60;
+        this.camera.position.z = Math.cos(Date.now() * 0.0003) * 60;
+        this.camera.position.y = 25;
+        this.camera.lookAt(0, 5, 0);
+      }
+      return;
+    }
 
     const inputState = this.input.getState();
 
-    // 1. Update Local Kart Physics & Animation
-    if (this.gameState === 'racing' || this.gameState === 'countdown') {
-      const activeInput = this.gameState === 'racing' ? inputState : { accelerate: false, brake: false, steerLeft: false, steerRight: false, drift: false, useItem: false };
+    // 1. Update Local Physics
+    const otherPhys = Array.from(this.remoteKarts.values()).map(r => r.physics).filter(Boolean);
+    this.localPhysics.update(dt, inputState, otherPhys);
+    this.localVisual.group.position.copy(this.localPhysics.position);
+    this.localVisual.group.quaternion.copy(this.localPhysics.quaternion);
+    this.localVisual.update(
+      dt,
+      this.localPhysics.speed,
+      inputState.steerLeft ? 1 : (inputState.steerRight ? -1 : 0),
+      this.localPhysics.driftTier,
+      this.localPhysics.boostTimer > 0,
+      this.localPhysics.isInvincible,
+      this.localPhysics.isZapped
+    );
 
-      const otherPhys = [];
-      for (const r of this.remoteKarts.values()) {
-        if (r.physics) otherPhys.push(r.physics);
+    // Item usage
+    if (inputState.useItem) {
+      if (!this.isSinglePlayer) {
+        this.net.send({ type: 'use_item', heading: this.localPhysics.heading });
       }
+      this.clearItemHUD();
+    }
 
-      this.localPhysics.update(dt, activeInput, otherPhys);
-      this.localVisual.group.position.copy(this.localPhysics.position);
-      this.localVisual.group.quaternion.copy(this.localPhysics.quaternion);
-
-      this.localVisual.update(
-        dt,
-        this.localPhysics.speed,
-        activeInput.steerLeft ? 1 : (activeInput.steerRight ? -1 : 0),
-        this.localPhysics.driftTier,
-        this.localPhysics.boostTimer > 0,
-        this.localPhysics.isInvincible,
-        this.localPhysics.isZapped
-      );
-
-      // Check item box pickups
-      const pickedBoxId = this.itemManager.checkItemBoxCollisions(this.localPhysics.position);
-      if (pickedBoxId !== null) {
-        sound.playItemBoxRoll();
+    // Check item box collisions
+    if (this.itemManager && (this.gameState === 'racing' || this.gameState === 'countdown')) {
+      const hitBoxId = this.itemManager.checkKartCollision(this.localPhysics.position);
+      if (hitBoxId !== null) {
         if (this.isSinglePlayer) {
-          const pool = ['MUSHROOM', 'RED_SHELL', 'GREEN_SHELL', 'BANANA', 'STAR', 'LIGHTNING'];
-          this.setItem(pool[Math.floor(Math.random() * pool.length)]);
+          this.itemManager.collectBox(hitBoxId);
+          sound.playItemBoxSpin();
+          setTimeout(() => {
+            sound.playItemBoxGet();
+            const pool = ['BANANA', 'GREEN_SHELL', 'RED_SHELL', 'MUSHROOM', 'STAR', 'LIGHTNING'];
+            const item = pool[Math.floor(Math.random() * pool.length)];
+            this.showItemHUD(item);
+          }, 1000);
         } else {
-          this.net.send({ type: 'pickup_item_box', boxId: pickedBoxId });
+          this.net.send({ type: 'pickup_item_box', boxId: hitBoxId });
         }
       }
+    }
 
-      // Check item usage
-      if (activeInput.useItem && this.currentItem) {
-        this.useItem();
-      }
-
-      // Check lap completion
+    // Lap progress checking
+    if (this.gameState === 'racing') {
       if (this.localPhysics.currentLap !== this.currentLap) {
-        const lapTime = (Date.now() - this.lapStartTime) / 1000;
         this.currentLap = this.localPhysics.currentLap;
+        const lapTime = Date.now() - this.lapStartTime;
         this.lapStartTime = Date.now();
 
         if (this.currentLap === this.totalLaps) {
+          sound.playFinalLapJingle();
           sound.startMusic(true);
         }
 
-        if (this.isSinglePlayer) {
-          if (this.currentLap > this.totalLaps) {
+        if (this.currentLap > this.totalLaps) {
+          this.gameState = 'finished';
+          if (this.isSinglePlayer) {
             this.showPodium([
-              { rank: 1, name: this.localName, finishTime: Date.now() - this.raceStartTime },
-              { rank: 2, name: '[AI] Bot 1', finishTime: (Date.now() - this.raceStartTime) + 2400 },
-              { rank: 3, name: '[AI] Bot 2', finishTime: (Date.now() - this.raceStartTime) + 4800 }
+              { name: this.localName, finishTime: Date.now() - this.raceStartTime },
+              { name: '[AI] Bot 1', finishTime: Date.now() - this.raceStartTime + 1420 },
+              { name: '[AI] Bot 2', finishTime: Date.now() - this.raceStartTime + 2890 }
             ]);
             sound.playVictoryFanfare();
           }

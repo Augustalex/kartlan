@@ -705,3 +705,16 @@ input[type="text"]:focus, .track-select-dropdown:focus {
   font-size: 1.1rem;
   color: var(--neon-cyan);
 }
+
+/* Direct IP Connect Bar */
+.direct-connect-bar {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.direct-connect-bar input {
+  flex: 1;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.9rem;
+}

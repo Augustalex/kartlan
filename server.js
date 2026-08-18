@@ -1,7 +1,7 @@
 /**
  * KARTLAN 3D - Authoritative LAN Multiplayer Game Server
  * Features: Dynamic port auto-selection, WebSocket sync, UDP LAN auto-discovery,
- * room lobby management, authoritative checkpoint/ranking & item validation.
+ * CORS support for LAN browser clients, room lobby management, & item validation.
  */
 
 const express = require('express');
@@ -19,6 +19,14 @@ const SNAPSHOT_INTERVAL_MS = 1000 / TICK_RATE;
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+
+// Enable CORS for LAN browser clients
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+});
 
 app.use(express.json());
 
