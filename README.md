@@ -17,21 +17,21 @@
 
 ---
 
-## ⚡ Quickstart: Play in 5 Seconds
+## ⚡ Quickstart: Play or Update in 5 Seconds
 
 ### 🎮 For Your Friend (Single Command One-Liner):
-Copy and paste this into any terminal (Linux / macOS / WSL):
+Copy and paste this into any terminal (Linux / macOS / WSL) to **install, update to the latest version, and launch the game**:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Augustalex/kartlan/main/install.sh | bash
 ```
 
-Or clone and start directly:
+> 💡 **Already have it installed?** Running the same command will **automatically pull the latest version** and launch right away!
+
+Or if already inside the folder:
 ```bash
-git clone https://github.com/Augustalex/kartlan.git
-cd kartlan
-npm install
-npm start
+./update.sh   # Updates to latest version
+./play.sh     # Launches the game
 ```
 
 ---
@@ -57,10 +57,11 @@ kartlan
 ## 🌐 Playing Over Wi-Fi LAN
 
 1. **Host starts the game**: Run `kartlan` or `npm start`.
-2. The server detects your Wi-Fi IPv4 address (e.g. `http://192.168.1.150:3000`) and announces presence on the local network.
+2. The server detects your Wi-Fi IPv4 address (e.g. `http://192.168.1.150:3030`) and announces presence on the local network.
 3. **Friends connect**:
-   - **Method A (Zero-Config Auto-Discovery)**: Your friend opens `kartlan` or navigates to the lobby and clicks **🔄 SCAN LAN** to automatically discover your room.
-   - **Method B (Direct Browser Link)**: Your friend opens a browser on their laptop, desktop, tablet, or phone and navigates directly to `http://<your-lan-ip>:3000` (e.g., `http://192.168.1.150:3000`).
+   - **Method A (Direct Browser Link)**: Your friend opens any browser (Chrome, Firefox, Safari, Edge) on PC, Mac, Linux, iPad, or mobile and navigates directly to `http://<your-lan-ip>:3030`.
+   - **Method B (One-Liner Runner)**: Your friend runs `curl -sSL https://raw.githubusercontent.com/Augustalex/kartlan/main/install.sh | bash`.
+   - **Method C (LAN Auto-Discovery)**: In the game lobby, click **🔄 SCAN LAN** to auto-detect the host room.
 4. Choose your kart colors, set ready, and start the Grand Prix!
 
 ---
@@ -69,7 +70,7 @@ kartlan
 
 Full support for Keyboard, USB/Bluetooth Gamepads (Xbox, PlayStation, Nintendo Switch Pro), and Mobile Touch screens:
 
-| Action | Keyboard | Gamepad (Xbox / PS) | Touch / Mobile |
+| Action | Keyboard | Gamepad (Xbox / PS / Switch) | Touch / Mobile |
 | :--- | :--- | :--- | :--- |
 | **Accelerate** | `W` / `Up Arrow` | `Right Trigger (RT/R2)` / `A (✕)` | **GAS** Button |
 | **Brake / Reverse** | `S` / `Down Arrow` | `Left Trigger (LT/L2)` / `B (○)` | **BRAKE** Button |
@@ -117,7 +118,7 @@ KARTLAN 3D features a **100% standalone procedural Web Audio API synthesizer** r
 
 ```bash
 # Start standalone headless dedicated LAN server
-node server.js --server --port 3000
+node server.js --server --port 3030
 
 # Start client with custom port without opening browser
 kartlan --port 8080 --no-open
