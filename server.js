@@ -19,6 +19,7 @@ const SNAPSHOT_INTERVAL_MS = 1000 / TICK_RATE;
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+wss.on('error', () => {});
 
 // Enable CORS for LAN browser clients
 app.use((req, res, next) => {
@@ -725,6 +726,8 @@ udpSocket.bind(UDP_BEACON_PORT, () => {
 
 function startListening(port) {
   currentServerPort = port;
+  server.removeAllListeners('error');
+
   server.listen(port, '0.0.0.0', () => {
     const lanIps = getLanIps();
     console.log('\n======================================================');

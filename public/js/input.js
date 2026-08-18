@@ -132,3 +132,5 @@ export class InputController {
     };
   }
 }
+
+export { InputController as InputManager };
