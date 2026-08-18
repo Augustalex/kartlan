@@ -1,6 +1,6 @@
 /**
  * KARTLAN 3D - Authoritative LAN Multiplayer Game Server
- * Features: High-tick WebSocket sync, UDP LAN auto-discovery beacon,
+ * Features: Dynamic port auto-selection, WebSocket sync, UDP LAN auto-discovery,
  * room lobby management, authoritative checkpoint/ranking & item validation.
  */
 
@@ -11,7 +11,7 @@ const os = require('os');
 const dgram = require('dgram');
 const { WebSocketServer, WebSocket } = require('ws');
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+let DEFAULT_PORT = parseInt(process.env.PORT || '3030', 10);
 const UDP_BEACON_PORT = 41234;
 const TICK_RATE = 60; // 60Hz server tick rate
 const SNAPSHOT_INTERVAL_MS = 1000 / TICK_RATE;
@@ -40,6 +40,7 @@ function getLanIps() {
 const rooms = new Map(); // roomId -> Room
 let nextRoomId = 1000;
 let nextPlayerId = 1;
+let currentServerPort = DEFAULT_PORT;
 
 class Room {
   constructor(id, name, hostId, options = {}) {
@@ -141,7 +142,7 @@ class Room {
     this.countdownTimer = 3.99;
     this.podium = [];
 
-    // Grid slots
+    // Set starting grid positions
     let gridSlot = 0;
     for (const player of this.players.values()) {
       const row = Math.floor(gridSlot / 2);
@@ -475,13 +476,13 @@ class Room {
   }
 }
 
-// REST API endpoints (mounted before static files)
+// REST API endpoints
 app.get('/api/info', (req, res) => {
   res.json({
     name: 'KARTLAN 3D Game Server',
     version: '1.0.0',
     lanIps: getLanIps(),
-    port: PORT,
+    port: currentServerPort,
     roomsCount: rooms.size
   });
 });
@@ -686,7 +687,7 @@ udpSocket.on('message', (msg, rinfo) => {
     const response = JSON.stringify({
       type: 'KARTLAN_BEACON_RESPONSE',
       name: 'KARTLAN 3D Game Server',
-      port: PORT,
+      port: currentServerPort,
       lanIps: lanIps.map(i => i.address),
       roomsCount: rooms.size
     });
@@ -705,7 +706,7 @@ udpSocket.bind(UDP_BEACON_PORT, () => {
       const beaconMsg = JSON.stringify({
         type: 'KARTLAN_BEACON',
         serverName: 'KARTLAN 3D',
-        port: PORT,
+        port: currentServerPort,
         lanIps: lanIps.map(i => i.address),
         rooms: Array.from(rooms.values()).map(r => r.toJSON())
       });
@@ -714,24 +715,37 @@ udpSocket.bind(UDP_BEACON_PORT, () => {
   }, 2500);
 });
 
-// Start listening if executed directly
-if (require.main === module) {
-  server.listen(PORT, '0.0.0.0', () => {
+function startListening(port) {
+  currentServerPort = port;
+  server.listen(port, '0.0.0.0', () => {
     const lanIps = getLanIps();
     console.log('\n======================================================');
     console.log('   🏎️   KARTLAN 3D - WI-FI LAN MULTIPLAYER SERVER   🏎️');
     console.log('======================================================');
-    console.log(` Local:   http://localhost:${PORT}`);
+    console.log(` Local:   http://localhost:${port}`);
     if (lanIps.length > 0) {
       console.log(' LAN IPs for friends on same Wi-Fi:');
       for (const iface of lanIps) {
-        console.log(`   👉 ${iface.name}: \x1b[36mhttp://${iface.address}:${PORT}\x1b[0m`);
+        console.log(`   👉 ${iface.name}: \x1b[36mhttp://${iface.address}:${port}\x1b[0m`);
       }
     } else {
       console.log(' No external Wi-Fi IP detected (Playing locally)');
     }
     console.log('======================================================\n');
   });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`⚠️ Port ${port} is in use, trying port ${port + 1}...`);
+      startListening(port + 1);
+    } else {
+      console.error('Server error:', err);
+    }
+  });
+}
+
+if (require.main === module) {
+  startListening(DEFAULT_PORT);
 }
 
 module.exports = { server, app, rooms, Room };

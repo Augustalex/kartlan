@@ -31,7 +31,7 @@ class Game {
     // Multi-kart entities
     this.remoteKarts = new Map(); // id -> { visual, physics, botController }
     this.localPlayerId = 'p_local';
-    this.localName = 'Player 1';
+    this.localName = 'TurboAce';
     this.localColor = '#00f0ff';
 
     // Game state
@@ -53,6 +53,7 @@ class Game {
     this.lastSendTickTime = 0;
 
     this.initRenderer();
+    this.loadTrack(this.currentTrackId);
     this.initNetwork();
     this.initUI();
     this.animate();
@@ -74,16 +75,14 @@ class Game {
     this.container.appendChild(this.renderer.domElement);
 
     // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
     this.scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
     dirLight.position.set(100, 150, 80);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
     dirLight.shadow.mapSize.height = 2048;
-    dirLight.shadow.camera.near = 10;
-    dirLight.shadow.camera.far = 400;
     const d = 120;
     dirLight.shadow.camera.left = -d;
     dirLight.shadow.camera.right = d;
@@ -102,15 +101,14 @@ class Game {
   }
 
   loadTrack(trackId) {
-    // Clear old track
+    // Clear old elements
     if (this.track) {
       while (this.scene.children.length > 0) {
         this.scene.remove(this.scene.children[0]);
       }
-      // Re-add lights
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
       this.scene.add(ambientLight);
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
       dirLight.position.set(100, 150, 80);
       dirLight.castShadow = true;
       this.scene.add(dirLight);
@@ -129,18 +127,29 @@ class Game {
     this.localVisual = new KartVisual(this.scene, this.localColor, true);
 
     const startWp = this.track.waypoints[0];
-    this.localPhysics.setPosition(startWp.point.x - 3.5, startWp.point.y + 0.5, startWp.point.z, Math.atan2(-startWp.tangent.x, -startWp.tangent.z));
+    this.localPhysics.setPosition(
+      startWp.point.x - 3.5,
+      startWp.point.y + 0.5,
+      startWp.point.z,
+      Math.atan2(-startWp.tangent.x, -startWp.tangent.z)
+    );
   }
 
   initNetwork() {
     this.net.on('connected', () => {
-      document.getElementById('server-status').innerText = 'Connected';
-      document.getElementById('server-status').className = 'badge badge-green';
+      const statusEl = document.getElementById('server-status');
+      if (statusEl) {
+        statusEl.innerText = 'Connected';
+        statusEl.className = 'badge badge-green';
+      }
     });
 
     this.net.on('disconnected', () => {
-      document.getElementById('server-status').innerText = 'Disconnected';
-      document.getElementById('server-status').className = 'badge badge-red';
+      const statusEl = document.getElementById('server-status');
+      if (statusEl) {
+        statusEl.innerText = 'Disconnected';
+        statusEl.className = 'badge badge-red';
+      }
     });
 
     this.net.on('ping_update', (ping) => {
@@ -233,51 +242,80 @@ class Game {
 
   initUI() {
     // Menu Buttons
-    document.getElementById('btn-singleplayer').addEventListener('click', () => {
-      sound.resume();
-      this.startSinglePlayerGame();
-    });
+    const btnSingle = document.getElementById('btn-singleplayer');
+    if (btnSingle) {
+      btnSingle.onclick = (e) => {
+        e.preventDefault();
+        sound.resume();
+        this.startSinglePlayerGame();
+      };
+    }
 
-    document.getElementById('btn-host-lan').addEventListener('click', () => {
-      sound.resume();
-      this.createLanRoom();
-    });
+    const btnHost = document.getElementById('btn-host-lan');
+    if (btnHost) {
+      btnHost.onclick = (e) => {
+        e.preventDefault();
+        sound.resume();
+        this.createLanRoom();
+      };
+    }
 
-    document.getElementById('btn-refresh-rooms').addEventListener('click', () => {
-      this.refreshLanRooms();
-    });
+    const btnRefresh = document.getElementById('btn-refresh-rooms');
+    if (btnRefresh) {
+      btnRefresh.onclick = (e) => {
+        e.preventDefault();
+        this.refreshLanRooms();
+      };
+    }
 
-    document.getElementById('btn-toggle-ready').addEventListener('click', () => {
-      const isReady = document.getElementById('btn-toggle-ready').classList.toggle('ready');
-      document.getElementById('btn-toggle-ready').innerText = isReady ? 'READY!' : 'SET READY';
-      this.net.send({ type: 'set_ready', ready: isReady });
-    });
+    const btnReady = document.getElementById('btn-toggle-ready');
+    if (btnReady) {
+      btnReady.onclick = (e) => {
+        e.preventDefault();
+        const isReady = btnReady.classList.toggle('ready');
+        btnReady.innerText = isReady ? 'READY!' : 'SET READY';
+        this.net.send({ type: 'set_ready', ready: isReady });
+      };
+    }
 
-    document.getElementById('btn-start-race').addEventListener('click', () => {
-      this.net.send({ type: 'start_race' });
-    });
+    const btnStart = document.getElementById('btn-start-race');
+    if (btnStart) {
+      btnStart.onclick = (e) => {
+        e.preventDefault();
+        this.net.send({ type: 'start_race' });
+      };
+    }
 
-    document.getElementById('btn-leave-lobby').addEventListener('click', () => {
-      this.net.send({ type: 'leave_room' });
-      this.showMenuScreen();
-    });
+    const btnLeave = document.getElementById('btn-leave-lobby');
+    if (btnLeave) {
+      btnLeave.onclick = (e) => {
+        e.preventDefault();
+        this.net.send({ type: 'leave_room' });
+        this.showMenuScreen();
+      };
+    }
 
-    document.getElementById('btn-podium-menu').addEventListener('click', () => {
-      this.showMenuScreen();
-    });
+    const btnPodium = document.getElementById('btn-podium-menu');
+    if (btnPodium) {
+      btnPodium.onclick = (e) => {
+        e.preventDefault();
+        this.showMenuScreen();
+      };
+    }
 
     // Track selector change
     const trackSelect = document.getElementById('lobby-track-select');
     if (trackSelect) {
-      trackSelect.addEventListener('change', (e) => {
+      trackSelect.onchange = (e) => {
         this.net.send({ type: 'update_settings', trackId: e.target.value });
-      });
+      };
     }
 
     // Kart Color picker
     const colorButtons = document.querySelectorAll('.color-swatch');
     colorButtons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
         colorButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.localColor = btn.dataset.color;
@@ -285,7 +323,7 @@ class Game {
           this.localVisual.colorHex = this.localColor;
           this.localVisual.bodyMesh.material.color.set(this.localColor);
         }
-      });
+      };
     });
 
     // Auto connect to host WebSocket
@@ -305,6 +343,7 @@ class Game {
 
   async refreshLanRooms() {
     const roomsList = document.getElementById('lan-rooms-list');
+    if (!roomsList) return;
     roomsList.innerHTML = '<div class="loading-text">Scanning LAN for games...</div>';
 
     const info = await this.net.getServerInfo();
@@ -332,17 +371,18 @@ class Game {
         </div>
         <button class="btn btn-primary btn-join" data-id="${room.id}">JOIN RACE</button>
       `;
-      item.querySelector('.btn-join').addEventListener('click', () => {
+      item.querySelector('.btn-join').onclick = (e) => {
+        e.preventDefault();
         sound.resume();
         this.joinLanRoom(room.id);
-      });
+      };
       roomsList.appendChild(item);
     });
   }
 
   createLanRoom() {
-    const nameInput = document.getElementById('input-player-name').value || 'Racer';
-    this.localName = nameInput;
+    const nameInput = document.getElementById('input-player-name');
+    this.localName = (nameInput && nameInput.value) ? nameInput.value : 'TurboAce';
     this.isSinglePlayer = false;
 
     this.net.send({
@@ -357,8 +397,8 @@ class Game {
   }
 
   joinLanRoom(roomId) {
-    const nameInput = document.getElementById('input-player-name').value || 'Racer';
-    this.localName = nameInput;
+    const nameInput = document.getElementById('input-player-name');
+    this.localName = (nameInput && nameInput.value) ? nameInput.value : 'TurboAce';
     this.isSinglePlayer = false;
 
     this.net.send({
@@ -376,16 +416,22 @@ class Game {
     document.getElementById('screen-hud').classList.add('hidden');
     document.getElementById('screen-podium').classList.add('hidden');
 
-    document.getElementById('lobby-room-name').innerText = room.name;
+    const nameEl = document.getElementById('lobby-room-name');
+    if (nameEl) nameEl.innerText = room.name;
+
     const isHost = room.hostId === this.localPlayerId;
-    document.getElementById('btn-start-race').style.display = isHost ? 'block' : 'none';
-    document.getElementById('lobby-track-select').disabled = !isHost;
+    const startBtn = document.getElementById('btn-start-race');
+    if (startBtn) startBtn.style.display = isHost ? 'block' : 'none';
+
+    const trackSelect = document.getElementById('lobby-track-select');
+    if (trackSelect) trackSelect.disabled = !isHost;
 
     this.updateLobbyPlayers(players);
   }
 
   updateLobbyPlayers(players) {
     const grid = document.getElementById('lobby-players-grid');
+    if (!grid) return;
     grid.innerHTML = '';
     players.forEach(p => {
       const card = document.createElement('div');
@@ -400,7 +446,8 @@ class Game {
   }
 
   updateLobbySettings(room) {
-    document.getElementById('lobby-track-select').value = room.trackId;
+    const sel = document.getElementById('lobby-track-select');
+    if (sel) sel.value = room.trackId;
   }
 
   startSinglePlayerGame() {
@@ -409,10 +456,26 @@ class Game {
     this.currentTrackId = 'circuit_neon';
     this.totalLaps = 3;
 
-    this.loadTrack(this.currentTrackId);
+    // Load track if needed
+    if (!this.track || this.currentTrackId !== 'circuit_neon') {
+      this.loadTrack('circuit_neon');
+    }
+
+    // Reset local kart
+    const startWp = this.track.waypoints[0];
+    const startAngle = Math.atan2(-startWp.tangent.x, -startWp.tangent.z);
+    this.localPhysics.setPosition(startWp.point.x - 3.5, startWp.point.y + 0.5, startWp.point.z, startAngle);
+    this.localPhysics.currentLap = 1;
+    this.localPhysics.lapProgress = 0;
+    this.localPhysics.speed = 0;
+
+    // Clean up old remote karts
+    for (const r of this.remoteKarts.values()) {
+      if (r.visual) r.visual.destroy();
+    }
+    this.remoteKarts.clear();
 
     // Spawn 5 AI bots
-    this.remoteKarts.clear();
     const botColors = ['#ff0055', '#00ff66', '#ffaa00', '#aa00ff', '#ffffff'];
     for (let i = 0; i < 5; i++) {
       const botId = `bot_${i + 1}`;
@@ -422,8 +485,7 @@ class Game {
 
       const row = Math.floor((i + 1) / 2);
       const col = ((i + 1) % 2) === 0 ? -3.5 : 3.5;
-      const startWp = this.track.waypoints[0];
-      phys.setPosition(startWp.point.x + col, startWp.point.y + 0.5, startWp.point.z - row * 9, Math.atan2(-startWp.tangent.x, -startWp.tangent.z));
+      phys.setPosition(startWp.point.x + col, startWp.point.y + 0.5, startWp.point.z - row * 9, startAngle);
 
       this.remoteKarts.set(botId, {
         id: botId,
@@ -436,16 +498,38 @@ class Game {
       });
     }
 
-    this.startRaceCountdown({
-      countdown: 3,
-      trackId: this.currentTrackId,
-      laps: this.totalLaps
-    });
+    // Switch screen to HUD
+    this.gameState = 'countdown';
+    this.currentLap = 1;
+    document.getElementById('screen-lobby').classList.add('hidden');
+    document.getElementById('screen-menu').classList.add('hidden');
+    document.getElementById('screen-hud').classList.remove('hidden');
+
+    this.showCountdown(3);
+    sound.playCountdownBeep(false);
+
+    let count = 3;
+    const timer = setInterval(() => {
+      count--;
+      if (count > 0) {
+        this.showCountdown(count);
+        sound.playCountdownBeep(false);
+      } else {
+        clearInterval(timer);
+        this.gameState = 'racing';
+        this.raceStartTime = Date.now();
+        this.lapStartTime = Date.now();
+        this.showCountdown('GO!');
+        sound.playCountdownBeep(true);
+        sound.startMusic(false);
+        setTimeout(() => this.hideCountdown(), 1200);
+      }
+    }, 1000);
   }
 
   startRaceCountdown(data) {
     this.gameState = 'countdown';
-    this.currentTrackId = data.trackId || this.currentTrackId;
+    const targetTrackId = data.trackId || this.currentTrackId;
     this.totalLaps = data.laps || 3;
     this.currentLap = 1;
 
@@ -453,12 +537,24 @@ class Game {
     document.getElementById('screen-menu').classList.add('hidden');
     document.getElementById('screen-hud').classList.remove('hidden');
 
-    this.loadTrack(this.currentTrackId);
+    if (!this.track || this.currentTrackId !== targetTrackId) {
+      this.loadTrack(targetTrackId);
+    }
+
+    const startWp = this.track.waypoints[0];
+    const startAngle = Math.atan2(-startWp.tangent.x, -startWp.tangent.z);
+    this.localPhysics.setPosition(startWp.point.x - 3.5, startWp.point.y + 0.5, startWp.point.z, startAngle);
 
     // Initialize remote players from lobby
     if (data.players) {
+      // Clear old remote karts
+      for (const r of this.remoteKarts.values()) {
+        if (r.visual) r.visual.destroy();
+      }
+      this.remoteKarts.clear();
+
       data.players.forEach((p, idx) => {
-        if (p.id !== this.localPlayerId && !this.remoteKarts.has(p.id)) {
+        if (p.id !== this.localPlayerId) {
           const vis = new KartVisual(this.scene, p.color, false);
           this.remoteKarts.set(p.id, {
             id: p.id,
@@ -474,30 +570,11 @@ class Game {
 
     this.showCountdown(3);
     sound.playCountdownBeep(false);
-
-    if (this.isSinglePlayer) {
-      let count = 3;
-      const timer = setInterval(() => {
-        count--;
-        if (count > 0) {
-          this.showCountdown(count);
-          sound.playCountdownBeep(false);
-        } else {
-          clearInterval(timer);
-          this.gameState = 'racing';
-          this.raceStartTime = Date.now();
-          this.lapStartTime = Date.now();
-          this.showCountdown('GO!');
-          sound.playCountdownBeep(true);
-          sound.startMusic(false);
-          setTimeout(() => this.hideCountdown(), 1200);
-        }
-      }, 1000);
-    }
   }
 
   showCountdown(text) {
     const el = document.getElementById('hud-countdown');
+    if (!el) return;
     el.innerText = text;
     el.classList.remove('hidden');
     el.classList.add('pulse-anim');
@@ -505,12 +582,13 @@ class Game {
 
   hideCountdown() {
     const el = document.getElementById('hud-countdown');
-    el.classList.add('hidden');
+    if (el) el.classList.add('hidden');
   }
 
   setItem(itemType) {
     this.currentItem = itemType;
     const itemBoxEl = document.getElementById('hud-item-icon');
+    if (!itemBoxEl) return;
     const itemNames = {
       'GREEN_SHELL': '🟢 GREEN SHELL',
       'RED_SHELL': '🔴 RED SHELL',
@@ -528,7 +606,8 @@ class Game {
     if (!this.currentItem) return;
     const item = this.currentItem;
     this.currentItem = null;
-    document.getElementById('hud-item-icon').innerText = '';
+    const iconEl = document.getElementById('hud-item-icon');
+    if (iconEl) iconEl.innerText = '';
 
     if (this.isSinglePlayer) {
       if (item === 'MUSHROOM') {
@@ -572,7 +651,7 @@ class Game {
   removeRemoteKart(playerId) {
     const r = this.remoteKarts.get(playerId);
     if (r) {
-      r.visual.destroy();
+      if (r.visual) r.visual.destroy();
       this.remoteKarts.delete(playerId);
     }
   }
@@ -586,7 +665,6 @@ class Game {
     if (this.gameState === 'racing' || this.gameState === 'countdown') {
       const activeInput = this.gameState === 'racing' ? inputState : { accelerate: false, brake: false, steerLeft: false, steerRight: false, drift: false, useItem: false };
 
-      // Collect other karts for collision
       const otherPhys = [];
       for (const r of this.remoteKarts.values()) {
         if (r.physics) otherPhys.push(r.physics);
@@ -630,7 +708,7 @@ class Game {
         this.lapStartTime = Date.now();
 
         if (this.currentLap === this.totalLaps) {
-          sound.startMusic(true); // Final lap speedup!
+          sound.startMusic(true);
         }
 
         if (this.isSinglePlayer) {
@@ -672,10 +750,9 @@ class Game {
         }
       }
     } else {
-      // Interpolate remote multiplayer karts
       for (const [id, r] of this.remoteKarts.entries()) {
         const state = this.net.getInterpolatedPlayerState(id);
-        if (state) {
+        if (state && r.visual) {
           r.visual.group.position.copy(state.position);
           r.visual.group.quaternion.copy(state.quaternion);
           r.visual.update(
@@ -732,7 +809,6 @@ class Game {
     this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetCamZ, dt * 12);
     this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetCamY, dt * 12);
 
-    // Camera shake
     if (this.localPhysics.cameraShake > 0) {
       this.camera.position.x += (Math.random() - 0.5) * this.localPhysics.cameraShake;
       this.camera.position.y += (Math.random() - 0.5) * this.localPhysics.cameraShake;
@@ -741,7 +817,6 @@ class Game {
     const lookTarget = kartPos.clone().add(new THREE.Vector3(0, 1.4, 0));
     this.camera.lookAt(lookTarget);
 
-    // Dynamic FOV
     this.camera.fov = 68 + this.localPhysics.fovKick;
     this.camera.updateProjectionMatrix();
   }
@@ -749,14 +824,13 @@ class Game {
   updateHUD() {
     if (this.gameState !== 'racing' && this.gameState !== 'countdown') return;
 
-    // Speedometer
     const speedKmh = Math.round(Math.abs(this.localPhysics.speed) * 3.6);
-    document.getElementById('hud-speed-num').innerText = speedKmh;
+    const speedEl = document.getElementById('hud-speed-num');
+    if (speedEl) speedEl.innerText = speedKmh;
 
-    // Lap Counter
-    document.getElementById('hud-lap-text').innerText = `LAP ${Math.min(this.currentLap, this.totalLaps)} / ${this.totalLaps}`;
+    const lapEl = document.getElementById('hud-lap-text');
+    if (lapEl) lapEl.innerText = `LAP ${Math.min(this.currentLap, this.totalLaps)} / ${this.totalLaps}`;
 
-    // Race Rank calculation
     let rank = 1;
     for (const r of this.remoteKarts.values()) {
       if (r.physics) {
@@ -765,7 +839,8 @@ class Game {
       }
     }
     const suffix = ['TH', 'ST', 'ND', 'RD', 'TH', 'TH', 'TH', 'TH'][rank] || 'TH';
-    document.getElementById('hud-rank-num').innerText = `${rank}${suffix}`;
+    const rankEl = document.getElementById('hud-rank-num');
+    if (rankEl) rankEl.innerText = `${rank}${suffix}`;
   }
 
   renderMinimap() {
@@ -776,12 +851,10 @@ class Game {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Transform track world coords to minimap canvas coords
     const bounds = { minX: -150, maxX: 350, minZ: -300, maxZ: 250 };
     const toCanvasX = (x) => ((x - bounds.minX) / (bounds.maxX - bounds.minX)) * (w - 30) + 15;
     const toCanvasY = (z) => ((z - bounds.minZ) / (bounds.maxZ - bounds.minZ)) * (h - 30) + 15;
 
-    // Draw Track Line
     ctx.beginPath();
     ctx.strokeStyle = '#223355';
     ctx.lineWidth = 10;
@@ -809,7 +882,6 @@ class Game {
     ctx.closePath();
     ctx.stroke();
 
-    // Draw Remote Opponents
     for (const r of this.remoteKarts.values()) {
       const pos = r.physics ? r.physics.position : (r.visual ? r.visual.group.position : null);
       if (pos) {
@@ -823,7 +895,6 @@ class Game {
       }
     }
 
-    // Draw Local Player Kart
     ctx.beginPath();
     ctx.arc(toCanvasX(this.localPhysics.position.x), toCanvasY(this.localPhysics.position.z), 6, 0, Math.PI * 2);
     ctx.fillStyle = '#00ffea';
@@ -839,6 +910,7 @@ class Game {
     document.getElementById('screen-podium').classList.remove('hidden');
 
     const list = document.getElementById('podium-results-list');
+    if (!list) return;
     list.innerHTML = '';
     podium.forEach((entry, idx) => {
       const row = document.createElement('div');
