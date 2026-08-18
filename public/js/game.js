@@ -1,7 +1,7 @@
 /**
  * KARTLAN 3D - Main Game Coordinator
- * Features: Three.js renderer, dynamic track manager, arcade physics,
- * real-time LAN subnet scanning & direct IP connect, HUD, audio & input.
+ * Features: Three.js WebGL renderer, Catmull-Rom track spline, arcade physics,
+ * 60Hz delta loop with performance.now, 3rd person chase camera, HUD, minimap, audio & input.
  */
 
 import * as THREE from './three.module.min.js';
@@ -9,7 +9,7 @@ import { Track } from './tracks.js';
 import { KartPhysics } from './physics.js';
 import { KartVisual } from './kart-models.js';
 import { ItemManager } from './items.js';
-import { InputManager } from './input.js';
+import { InputController, InputManager } from './input.js';
 import { NetworkClient } from './network.js';
 import { BotController } from './ai.js';
 import { sound } from './audio.js';
@@ -24,14 +24,14 @@ class Game {
     this.scene = null;
     this.camera = null;
     this.renderer = null;
-    this.clock = new THREE.Clock();
+    this.lastFrameTime = performance.now();
 
     // Game Objects
     this.track = null;
     this.itemManager = null;
     this.localPhysics = null;
     this.localVisual = null;
-    this.remoteKarts = new Map(); // id -> { physics, visual, botController, lap, ... }
+    this.remoteKarts = new Map();
 
     // Networking
     this.net = new NetworkClient();
@@ -52,12 +52,12 @@ class Game {
     this.minimapCanvas = document.getElementById('minimap-canvas');
     this.minimapCtx = this.minimapCanvas ? this.minimapCanvas.getContext('2d') : null;
 
-    this.input = new InputManager();
+    this.input = new InputController();
     this.initGraphics();
     this.loadTrack(this.currentTrackId);
     this.initNetwork();
     this.initUI();
-    this.animate();
+    this.startLoop();
   }
 
   initGraphics() {
@@ -66,7 +66,7 @@ class Game {
     this.scene.background = new THREE.Color(0x0a0a1a);
     this.scene.fog = new THREE.FogExp2(0x0a0a1a, 0.0035);
 
-    this.camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 1500);
+    this.camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1500);
     this.camera.position.set(0, 10, 20);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -78,11 +78,10 @@ class Game {
     this.renderer.toneMappingExposure = 1.1;
     container.appendChild(this.renderer.domElement);
 
-    // Global Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     this.scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
     dirLight.position.set(100, 150, 80);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 2048;
@@ -111,9 +110,9 @@ class Game {
       while (this.scene.children.length > 0) {
         this.scene.remove(this.scene.children[0]);
       }
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
       this.scene.add(ambientLight);
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
       dirLight.position.set(100, 150, 80);
       dirLight.castShadow = true;
       this.scene.add(dirLight);
@@ -130,12 +129,30 @@ class Game {
     this.localVisual = new KartVisual(this.scene, this.localColor, true);
 
     const startWp = this.track.waypoints[0];
+    const startAngle = Math.atan2(-startWp.tangent.x, -startWp.tangent.z);
     this.localPhysics.setPosition(
       startWp.point.x - 3.5,
       startWp.point.y + 0.05,
       startWp.point.z,
-      Math.atan2(-startWp.tangent.x, -startWp.tangent.z)
+      startAngle
     );
+  }
+
+  snapCameraBehindKart() {
+    if (!this.localPhysics || !this.camera) return;
+    const kartPos = this.localPhysics.position;
+    const heading = this.localPhysics.heading;
+    const camDistance = 7.2;
+    const camHeight = 3.0;
+
+    this.camera.position.x = kartPos.x + Math.sin(heading) * camDistance;
+    this.camera.position.z = kartPos.z + Math.cos(heading) * camDistance;
+    this.camera.position.y = kartPos.y + camHeight;
+
+    const lookTarget = kartPos.clone().add(new THREE.Vector3(0, 1.2, 0));
+    this.camera.lookAt(lookTarget);
+    this.camera.fov = 65;
+    this.camera.updateProjectionMatrix();
   }
 
   initNetwork() {
@@ -397,7 +414,6 @@ class Game {
     const directRooms = await this.net.discoverLanRooms(currentTarget);
     if (directRooms) allRooms.push(...directRooms);
 
-    // Auto-scan local subnet if on localhost or discovered IP
     if (info && info.lanIps && info.lanIps.length > 0) {
       const mainIp = info.lanIps[0].address;
       const parts = mainIp.split('.');
@@ -561,6 +577,7 @@ class Game {
     document.getElementById('screen-menu').classList.add('hidden');
     document.getElementById('screen-hud').classList.remove('hidden');
 
+    this.snapCameraBehindKart();
     this.showCountdown(3);
     sound.playCountdownBeep(false);
 
@@ -622,6 +639,7 @@ class Game {
       });
     }
 
+    this.snapCameraBehindKart();
     this.showCountdown(3);
     sound.playCountdownBeep(false);
   }
@@ -792,7 +810,7 @@ class Game {
     // 3. Update 3D Items & Projectiles
     this.itemManager.update(dt);
 
-    // 4. Update Dynamic Camera
+    // 4. Update Dynamic 3rd Person Chase Camera
     this.updateCamera(dt, inputState.lookBack);
 
     // 5. Send Network Input State (60Hz)
@@ -819,26 +837,27 @@ class Game {
     const kartPos = this.localPhysics.position;
     const heading = this.localPhysics.heading + (lookBack ? Math.PI : 0);
 
-    const camDistance = 8.5;
-    const camHeight = 3.6;
+    const camDistance = 7.2;
+    const camHeight = 3.0;
 
     const targetCamX = kartPos.x + Math.sin(heading) * camDistance;
     const targetCamZ = kartPos.z + Math.cos(heading) * camDistance;
     const targetCamY = kartPos.y + camHeight;
 
-    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, dt * 12);
-    this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetCamZ, dt * 12);
-    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetCamY, dt * 12);
+    const lerpFactor = Math.min(dt * 16, 1.0);
+    this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, lerpFactor);
+    this.camera.position.z = THREE.MathUtils.lerp(this.camera.position.z, targetCamZ, lerpFactor);
+    this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetCamY, lerpFactor);
 
     if (this.localPhysics.cameraShake > 0) {
       this.camera.position.x += (Math.random() - 0.5) * this.localPhysics.cameraShake;
       this.camera.position.y += (Math.random() - 0.5) * this.localPhysics.cameraShake;
     }
 
-    const lookTarget = kartPos.clone().add(new THREE.Vector3(0, 1.4, 0));
+    const lookTarget = kartPos.clone().add(new THREE.Vector3(0, 1.2, 0));
     this.camera.lookAt(lookTarget);
 
-    this.camera.fov = 68 + this.localPhysics.fovKick;
+    this.camera.fov = 65 + this.localPhysics.fovKick;
     this.camera.updateProjectionMatrix();
   }
 
@@ -872,12 +891,13 @@ class Game {
 
     ctx.clearRect(0, 0, w, h);
 
-    const bounds = { minX: -150, maxX: 350, minZ: -300, maxZ: 250 };
-    const toCanvasX = (x) => ((x - bounds.minX) / (bounds.maxX - bounds.minX)) * (w - 30) + 15;
-    const toCanvasY = (z) => ((z - bounds.minZ) / (bounds.maxZ - bounds.minZ)) * (h - 30) + 15;
+    const b = this.track.bounds;
+    const pad = 24;
+    const toCanvasX = (x) => ((x - b.minX) / (b.maxX - b.minX || 1)) * (w - pad * 2) + pad;
+    const toCanvasY = (z) => ((z - b.minZ) / (b.maxZ - b.minZ || 1)) * (h - pad * 2) + pad;
 
     ctx.beginPath();
-    ctx.strokeStyle = '#223355';
+    ctx.strokeStyle = '#1e293b';
     ctx.lineWidth = 10;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -907,17 +927,17 @@ class Game {
       const pos = r.physics ? r.physics.position : (r.visual ? r.visual.group.position : null);
       if (pos) {
         ctx.beginPath();
-        ctx.arc(toCanvasX(pos.x), toCanvasY(pos.z), 4.5, 0, Math.PI * 2);
+        ctx.arc(toCanvasX(pos.x), toCanvasY(pos.z), 4, 0, Math.PI * 2);
         ctx.fillStyle = '#ff0055';
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
       }
     }
 
     ctx.beginPath();
-    ctx.arc(toCanvasX(this.localPhysics.position.x), toCanvasY(this.localPhysics.position.z), 6, 0, Math.PI * 2);
+    ctx.arc(toCanvasX(this.localPhysics.position.x), toCanvasY(this.localPhysics.position.z), 5.5, 0, Math.PI * 2);
     ctx.fillStyle = '#00ffea';
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
@@ -946,13 +966,19 @@ class Game {
     });
   }
 
-  animate() {
-    requestAnimationFrame(() => this.animate());
-    const dt = Math.min(this.clock.getDelta(), 0.1);
-    this.update(dt);
-    if (this.renderer && this.scene && this.camera) {
-      this.renderer.render(this.scene, this.camera);
-    }
+  startLoop() {
+    this.lastFrameTime = performance.now();
+    const tick = () => {
+      requestAnimationFrame(tick);
+      const now = performance.now();
+      const dt = Math.min((now - this.lastFrameTime) / 1000, 0.1);
+      this.lastFrameTime = now;
+      this.update(dt);
+      if (this.renderer && this.scene && this.camera) {
+        this.renderer.render(this.scene, this.camera);
+      }
+    };
+    requestAnimationFrame(tick);
   }
 }
 

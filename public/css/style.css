@@ -718,3 +718,10 @@ input[type="text"]:focus, .track-select-dropdown:focus {
   padding: 0.5rem 0.8rem;
   font-size: 0.9rem;
 }
+
+/* Hide touch buttons on desktop with mouse/keyboard */
+@media (hover: hover) and (pointer: fine) {
+  .touch-overlay {
+    display: none !important;
+  }
+}

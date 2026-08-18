@@ -64,7 +64,6 @@ export class ItemManager {
   }
 
   update(dt) {
-    // 1. Animate Item Boxes (Float bobbing & rotation)
     const time = Date.now() * 0.003;
     for (const box of this.itemBoxes) {
       if (box.active) {
@@ -77,10 +76,9 @@ export class ItemManager {
       }
     }
 
-    // 2. Animate Projectiles
     for (const [id, proj] of this.projectiles.entries()) {
       if (proj.type === 'GREEN_SHELL' || proj.type === 'RED_SHELL') {
-        proj.mesh.rotation.y += dt * 15; // Fast spin
+        proj.mesh.rotation.y += dt * 15;
       } else if (proj.type === 'BANANA') {
         proj.mesh.rotation.y += dt * 1.5;
       }
@@ -100,6 +98,26 @@ export class ItemManager {
       }
     }
     return null;
+  }
+
+  checkKartCollision(kartPosition) {
+    return this.checkItemBoxCollisions(kartPosition);
+  }
+
+  collectBox(boxId) {
+    const box = this.itemBoxes.find(b => b.id === boxId);
+    if (box) {
+      box.active = false;
+      box.mesh.visible = false;
+    }
+  }
+
+  respawnBox(boxId) {
+    const box = this.itemBoxes.find(b => b.id === boxId);
+    if (box) {
+      box.active = true;
+      box.mesh.visible = true;
+    }
   }
 
   spawnProjectileVisual(projData) {
@@ -171,6 +189,7 @@ export class ItemManager {
     this.projectiles.clear();
     for (const box of this.itemBoxes) {
       box.active = true;
+      box.mesh.visible = true;
     }
   }
 }

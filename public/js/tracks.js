@@ -39,7 +39,7 @@ export const TRACK_CONFIGS = {
       { progress: 0.85, offset: -3 }
     ],
     jumpRamps: [
-      { progress: 0.42, height: 3.5 }
+      { progress: 0.42, height: 3.2 }
     ]
   },
 
@@ -73,8 +73,8 @@ export const TRACK_CONFIGS = {
       { progress: 0.68, offset: 2 }
     ],
     jumpRamps: [
-      { progress: 0.35, height: 4.0 },
-      { progress: 0.78, height: 3.5 }
+      { progress: 0.35, height: 3.8 },
+      { progress: 0.78, height: 3.2 }
     ]
   },
 
@@ -110,8 +110,8 @@ export const TRACK_CONFIGS = {
       { progress: 0.88, offset: 0 }
     ],
     jumpRamps: [
-      { progress: 0.28, height: 4.5 },
-      { progress: 0.58, height: 4.0 }
+      { progress: 0.28, height: 4.0 },
+      { progress: 0.58, height: 3.5 }
     ]
   }
 };
@@ -122,6 +122,7 @@ export class Track {
     this.config = TRACK_CONFIGS[trackId] || TRACK_CONFIGS.circuit_neon;
     this.curve = null;
     this.waypoints = [];
+    this.bounds = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
     this.totalLength = 0;
     this.roadMesh = null;
     this.curbsMesh = null;
@@ -152,6 +153,11 @@ export class Track {
         tangent,
         binormal
       });
+
+      this.bounds.minX = Math.min(this.bounds.minX, point.x);
+      this.bounds.maxX = Math.max(this.bounds.maxX, point.x);
+      this.bounds.minZ = Math.min(this.bounds.minZ, point.z);
+      this.bounds.maxZ = Math.max(this.bounds.maxZ, point.z);
     }
     this.totalLength = this.curve.getLength();
 
@@ -285,7 +291,6 @@ export class Track {
   }
 
   generateBoostPadsAndRamps() {
-    // Boost Pads (flush ground chevron pads)
     for (const pad of this.config.boostPads) {
       const wp = this.getWaypointAtProgress(pad.progress);
       const pos = new THREE.Vector3().copy(wp.point).addScaledVector(wp.binormal, pad.offset);
@@ -310,26 +315,21 @@ export class Track {
       });
     }
 
-    // Jump Ramps (Smooth inclined wedge ramp with chevron boost markings)
     for (const ramp of this.config.jumpRamps) {
       const wp = this.getWaypointAtProgress(ramp.progress);
       const rampWidth = this.config.roadWidth - 2.5;
       const rampLength = 10;
       const rampHeight = Math.min(ramp.height, 3.2);
 
-      // Create smooth wedge ramp geometry
       const rampGeom = new THREE.BufferGeometry();
       const hw = rampWidth / 2;
       const hl = rampLength / 2;
 
-      // Vertices of wedge
       const verts = new Float32Array([
-        // Incline plane
         -hw, 0, -hl,
          hw, 0, -hl,
          hw, rampHeight, hl,
         -hw, rampHeight, hl,
-        // Back wall
         -hw, rampHeight, hl,
          hw, rampHeight, hl,
          hw, 0, hl,
@@ -337,8 +337,8 @@ export class Track {
       ]);
 
       const idxs = [
-        0, 2, 1,  0, 3, 2, // top incline
-        4, 6, 5,  4, 7, 6  // back
+        0, 2, 1,  0, 3, 2,
+        4, 6, 5,  4, 7, 6
       ];
 
       rampGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
@@ -373,22 +373,24 @@ export class Track {
 
     const leftPillar = new THREE.Mesh(pillarGeom, pillarMat);
     leftPillar.position.copy(wp.point).addScaledVector(wp.binormal, -halfWidth - 3.5);
-    leftPillar.position.y += 7;
+    leftPillar.position.y = wp.point.y + 7;
 
     const rightPillar = new THREE.Mesh(pillarGeom, pillarMat);
     rightPillar.position.copy(wp.point).addScaledVector(wp.binormal, halfWidth + 3.5);
-    rightPillar.position.y += 7;
+    rightPillar.position.y = wp.point.y + 7;
 
-    const beamGeom = new THREE.BoxGeometry(this.config.roadWidth + 8, 2.5, 2);
+    // Crossbeam correctly spanning across track from left to right pillar
+    const beamGeom = new THREE.BoxGeometry(this.config.roadWidth + 8, 2.2, 1.8);
     const beamMat = new THREE.MeshStandardMaterial({
       color: 0x00f0ff,
-      emissive: 0x0066aa,
-      emissiveIntensity: 0.5
+      emissive: 0x004488,
+      emissiveIntensity: 0.6
     });
     const beam = new THREE.Mesh(beamGeom, beamMat);
     beam.position.copy(wp.point);
-    beam.position.y += 13;
-    beam.lookAt(wp.point.clone().add(wp.binormal));
+    beam.position.y = wp.point.y + 12.5;
+    // Align beam looking forward so its X length spans laterally along binormal
+    beam.lookAt(wp.point.clone().add(wp.tangent));
 
     archGroup.add(leftPillar);
     archGroup.add(rightPillar);
@@ -397,8 +399,7 @@ export class Track {
     this.finishLineMesh = archGroup;
   }
 
-  // Guaranteed safe scenery placement strictly OUTSIDE track boundaries
-  isSafeSceneryLocation(x, z, minBuffer = 26) {
+  isSafeSceneryLocation(x, z, minBuffer = 28) {
     for (let i = 0; i < this.waypoints.length; i += 2) {
       const wp = this.waypoints[i];
       const dx = x - wp.point.x;
@@ -422,13 +423,13 @@ export class Track {
       this.scene.add(ground);
 
       let spawned = 0;
-      for (let i = 0; i < 150 && spawned < 45; i++) {
+      for (let i = 0; i < 160 && spawned < 40; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const dist = 60 + Math.random() * 450;
+        const dist = 60 + Math.random() * 420;
         const x = Math.cos(angle) * dist + 100;
         const z = Math.sin(angle) * dist - 50;
 
-        if (!this.isSafeSceneryLocation(x, z, this.config.roadWidth / 2 + 18)) {
+        if (!this.isSafeSceneryLocation(x, z, this.config.roadWidth / 2 + 20)) {
           continue;
         }
 
@@ -459,13 +460,13 @@ export class Track {
       this.scene.add(ground);
 
       let spawned = 0;
-      for (let i = 0; i < 120 && spawned < 35; i++) {
+      for (let i = 0; i < 140 && spawned < 35; i++) {
         const angle = Math.random() * Math.PI * 2;
         const dist = 50 + Math.random() * 400;
         const x = Math.cos(angle) * dist + 80;
         const z = Math.sin(angle) * dist - 60;
 
-        if (!this.isSafeSceneryLocation(x, z, this.config.roadWidth / 2 + 20)) {
+        if (!this.isSafeSceneryLocation(x, z, this.config.roadWidth / 2 + 22)) {
           continue;
         }
 
@@ -531,7 +532,6 @@ export class Track {
     return closestWp;
   }
 
-  // Returns lateral signed distance from track center line (+right, -left)
   getTrackOffset(position) {
     const closest = this.findClosestWaypoint(position);
     const toPos = new THREE.Vector3().subVectors(position, closest.point);

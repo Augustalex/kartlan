@@ -1,6 +1,6 @@
 {
   "name": "kartlan",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "3D Arcade LAN Multiplayer Kart Racer with Drift Physics, Items, and Synthesized Audio",
   "main": "server.js",
   "bin": {
