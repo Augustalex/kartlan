@@ -4,11 +4,12 @@ set -e
 echo "📦 Building Debian package for KARTLAN 3D..."
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION=$(node -p "require('$ROOT_DIR/package.json').version")
 BUILD_DIR="$ROOT_DIR/dist/deb_build"
 DIST_DIR="$ROOT_DIR/dist"
-PKG_NAME="kartlan_1.0.0_all"
+PKG_NAME="kartlan_${VERSION}_all"
 
-rm -rf "$BUILD_DIR" "$DIST_DIR/$PKG_NAME.deb"
+rm -rf "$BUILD_DIR" "$DIST_DIR/$PKG_NAME.deb" "$DIST_DIR/kartlan_latest_all.deb"
 mkdir -p "$BUILD_DIR/DEBIAN"
 mkdir -p "$BUILD_DIR/usr/bin"
 mkdir -p "$BUILD_DIR/usr/lib/kartlan"
@@ -17,9 +18,9 @@ mkdir -p "$BUILD_DIR/usr/share/pixmaps"
 mkdir -p "$DIST_DIR"
 
 # 1. Control File
-cat << 'CTRL' > "$BUILD_DIR/DEBIAN/control"
+cat << CTRL > "$BUILD_DIR/DEBIAN/control"
 Package: kartlan
-Version: 1.0.0
+Version: $VERSION
 Section: games
 Priority: optional
 Architecture: all
@@ -102,6 +103,7 @@ tar -czf "$BUILD_DIR/data.tar.gz" usr
 
 # Build .deb archive
 python3 "$ROOT_DIR/scripts/make_deb.py" "$DIST_DIR/$PKG_NAME.deb" "$BUILD_DIR/debian-binary" "$BUILD_DIR/control.tar.gz" "$BUILD_DIR/data.tar.gz"
+cp "$DIST_DIR/$PKG_NAME.deb" "$DIST_DIR/kartlan_1.0.0_all.deb" 2>/dev/null || true
 
 echo "✅ Verifying archive contents:"
 ar -t "$DIST_DIR/$PKG_NAME.deb"
